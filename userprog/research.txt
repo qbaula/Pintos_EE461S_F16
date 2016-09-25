@@ -1,5 +1,11 @@
 This file will contain all of the research about how userprog works.
 
+Project Requirements/Assumptions:
+Part2:
+  Complete Syscall framework + Argument passing (handler, halt, setup_stack, exit) OR 
+  File Table Management (setup for read/write/open/remove) OR
+  Parent/Child (exec/wait)
+
 File locations and help:
   lib functions are located in project/lib and can be called using <header.h>
   this is where <list.h> resides for the built in doubly linked list
@@ -32,7 +38,8 @@ threads/thread.h
   Contains all of the information for the thread to run in struct thread.
   Currently doesn't contain info of filesys, separate processes, etc. May need to edit to add a list of files/threads
   local to the current thread as well as other variables necessary for each thread to remember. This is how we can store
-  what file descriptors are relavant to each file and pass it onto the child when necessary.
+  what file descriptors are relavant to each file and pass it onto the child when necessary. The list works in the sense
+  that we will need to create a struct to represent the file info which will contain the fd and the file pointer.
 
 filesys/filesys.h
   Contains all of the information necessary to talk to the filesys in pintos. All of it is done so should not need to change
