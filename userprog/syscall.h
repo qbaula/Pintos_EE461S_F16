@@ -1,6 +1,10 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
+#include <stdbool.h>
+
+typedef int pid_t;
+
 void syscall_init (void);
 
 /*
@@ -119,7 +123,7 @@ int read (int fd, void *buffer, unsigned size);
  * Otherwise, lines of text output by different processes may end up interleaved on the console,
  * confusing both human readers and our grading scripts.
  */
-int write (int fd, const void *buffer, unsigned size;
+int write (int fd, const void *buffer, unsigned size);
 
 /*
  * Changes the next byte to be read or written in open file fd to position,
