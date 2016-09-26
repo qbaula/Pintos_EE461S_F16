@@ -1,0 +1,47 @@
+This file will contain all of the research about how userprog works.
+
+Project Requirements/Assumptions:
+Part2:
+  Complete Syscall framework + Argument passing (handler, halt, setup_stack, exit) OR 
+  File Table Management (setup for read/write/open/remove) OR
+  Parent/Child (exec/wait)
+
+File locations and help:
+  lib functions are located in project/lib and can be called using <header.h>
+  this is where <list.h> resides for the built in doubly linked list
+
+threads/interrupt.h
+  contains the interrupt frame which has all of the details of what happened that caused the interrupt
+  contains the stack pointer of when the interrupt was called so this stack pointer will lead us to the details of the intr.
+  For syscall:
+>     From my understanding, the first word within the stack will contain what the interrupt was called for
+>     We can compare the data to the enum in lib/syscall-nr.h to see what called the syscall_handler
+>     The following words will contain the arguments that is passed onto the syscall. Ex. exit will pass an int for status
+>     Syscall-nr.h contains all of the syscalls we need to implment so how we should proceed syscall.c =>
+      >      Implement syscall_handler such that it has a switch:case for each different enum from Syscall-nr.h and 
+      >      retrieve the required arguments for each syscall. Then, call our syscall functions by passing in the argument. 
+      >      NOTE: If passing in ptr, we'll have to check how to handle it since the ptr may be pointing to virtual mem.
+
+threads/synch.h
+  contains locks that can be used to help us implement a synchronous access to filesys, etc
+  contains the struct for lock which can then be passed into lock_init, lock_acquire, lock_release
+  
+devices/shutdown.h
+  How to shutdown pintos
+>     Halt
+  
+devices/input.h
+  getc/putc
+>     Read/Write
+
+threads/thread.h
+  Contains all of the information for the thread to run in struct thread.
+  Currently doesn't contain info of filesys, separate processes, etc. May need to edit to add a list of files/threads
+  local to the current thread as well as other variables necessary for each thread to remember. This is how we can store
+  what file descriptors are relavant to each file and pass it onto the child when necessary. The list works in the sense
+  that we will need to create a struct to represent the file info which will contain the fd and the file pointer.
+
+filesys/filesys.h
+  Contains all of the information necessary to talk to the filesys in pintos. All of it is done so should not need to change
+  functions here unless we need to change a core functionality
+  To be used by filesys commands (open/close/remove)
