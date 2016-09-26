@@ -22,6 +22,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+void push_to_stack(void **stack_ptr, void *src, int size);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -47,10 +48,10 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
+  /*
   struct thread *curr_thread;
-
   curr_thread = thread_current();
-
+  */
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -60,14 +61,14 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  printf("(process_execute) address of file_name: %p\n", file_name);
-  printf("(process_execute) address of fn_copy: %p\n", fn_copy);
+  /* printf("(process_execute) address of file_name: %p\n", file_name); */
+  /* printf("(process_execute) address of fn_copy: %p\n", fn_copy); */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
 
-  printf("process_execute() in thread #%d\n", curr_thread->tid);
-  printf("process_execute() created thread #%d\n", tid);
+  /* printf("process_execute() in thread #%d\n", curr_thread->tid); */
+  /* printf("process_execute() created thread #%d\n", tid); */
   return tid;
 }
 
@@ -79,12 +80,14 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+
+  /*
   struct thread *curr_thread;
-
   curr_thread = thread_current();
-  printf("start_process() in thread #%d\n", curr_thread->tid);
+  printf("start_process() in thread #%d\n", curr_thread->tid); 
+  printf("(start_process) address pointed to by file_name: %p\n", file_name); 
+  */
 
-  printf("(start_process) address pointed to by file_name: %p\n", file_name);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -249,27 +252,32 @@ load (const char *args, void (**eip) (void), void **esp)
   char *token, *args_copy, *save_ptr;
 
   args_copy = (char *)(malloc((strlen(args) + 1) * sizeof(char)));
-  strlcpy(args_copy, args, strlen(args));
+  strlcpy(args_copy, args, strlen(args)+1);
+
+  /*
   printf("(load) address of args: %p\n", args);
-  printf("kian making sure of args value: %s\n", args);
+  printf("(load) address of args_copy: %p\n", args_copy);
+  printf("(load) value of args: %s\n", args);
+  printf("(load) value of args_copy: %s\n", args_copy);
+  */
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
   {
-    printf("error loc 1\n");
+    /* printf("error loc 1\n"); */
     goto done;
   }
   process_activate ();
 
   /* Open executable file. */
   token = strtok_r (args_copy, " ", &save_ptr); 
-  printf("executable name: %s\n", token);
+  /* printf("executable name: %s\n", token); */
   file = filesys_open (token);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", token);
-      printf("error loc 2\n");
+      /* printf("error loc 2\n"); */
       goto done; 
     }
 
@@ -283,7 +291,7 @@ load (const char *args, void (**eip) (void), void **esp)
       || ehdr.e_phnum > 1024) 
     {
       printf ("load: %s: error loading executable\n", token);
-      printf("error loc 3\n");
+      /* printf("error loc 3\n"); */
       goto done; 
     }
 
@@ -295,14 +303,14 @@ load (const char *args, void (**eip) (void), void **esp)
 
       if (file_ofs < 0 || file_ofs > file_length (file))
       {
-        printf("error loc 4\n");
+        /* printf("error loc 4\n"); */
         goto done;
       }
       file_seek (file, file_ofs);
 
       if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
       {
-        printf("error loc 5\n");
+        /* printf("error loc 5\n"); */
         goto done;
       }
       file_ofs += sizeof phdr;
@@ -318,7 +326,7 @@ load (const char *args, void (**eip) (void), void **esp)
         case PT_DYNAMIC:
         case PT_INTERP:
         case PT_SHLIB:
-          printf("error loc 6\n");
+          /* printf("error loc 6\n"); */
           goto done;
         case PT_LOAD:
           if (validate_segment (&phdr, file)) 
@@ -346,13 +354,13 @@ load (const char *args, void (**eip) (void), void **esp)
               if (!load_segment (file, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
               {
-                printf("error loc 7\n");
+                /* printf("error loc 7\n"); */
                 goto done;
               }
             }
           else 
           {
-            printf("error loc 8\n");
+            /* printf("error loc 8\n"); */
             goto done;
           }
           break;
@@ -362,7 +370,7 @@ load (const char *args, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp, args)) 
   {
-    printf("error loc 9\n");
+    /* printf("error loc 9\n"); */
     goto done;
   }
 
@@ -373,10 +381,12 @@ load (const char *args, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
+  /*
   if (success)
       printf ("load successful\n");
   else
       printf ("load unsuccessful\n");
+  */
   free (args_copy);
   file_close (file);
   return success;
@@ -490,6 +500,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+void
+push_to_stack(void **stack_ptr, void *src, int size)
+{
+  *stack_ptr -= size;
+  memcpy(*stack_ptr, src, size);
+}
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. 
    PHYS_BASE - 12 gives us room for return addr, argv, argc*/
@@ -499,7 +516,7 @@ setup_stack (void **esp, const char *args)
   uint8_t *kpage;
   bool success = false;
 
-  printf("we setting up stack!\n");
+  /* printf("we setting up stack!\n"); */
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
@@ -524,15 +541,17 @@ setup_stack (void **esp, const char *args)
   args_copy = (char *)(malloc((strlen(args) + 1) * sizeof(char)));
   strlcpy(args_copy, args, strlen(args)+1);
 
+  /* 
   printf("(setup_stack) address of args: %p\n", args);
   printf("(setup_stack) address of args_copy: %p\n", args_copy);
   printf("(setup_stack) value of args: %s\n", args);
   printf("(setup_stack) value of args_copy: %s\n", args_copy);
+  */
 
   /* Initialize argv
    * Array to store starting addresses of arguments placed on stack
    */
-  argc = 0; /* counter for number of arguments */
+  argc = 0; /* counter for number of arguments added to stack */
   argv_cap = 4; /* capacity of argv */
   argv = (char **)(malloc(argv_cap * sizeof(char *)));
 
@@ -542,14 +561,14 @@ setup_stack (void **esp, const char *args)
   for (token = strtok_r (args_copy, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
     {
-      *esp -= strlen(token) + 1;
-      memcpy(*esp, token, strlen(token) + 1);
+      push_to_stack(esp, token, strlen(token) + 1);
 
       argv[argc] = *esp;
       argc++;
-      if (argc >= argv_cap) /* Resize argv */
+
+      if (argc == argv_cap) /* Resize argv */
         {
-          argv_cap *= 2;
+          argv_cap <<= 1;
           argv = (char **)(realloc(argv, argv_cap * sizeof(char *)));
         }
     }
@@ -557,42 +576,34 @@ setup_stack (void **esp, const char *args)
 
   /* Align to word size (4 bytes) */
   int align;
-  for (align = (size_t) *esp % 4; align >= 0; align--)
+  for (align = (size_t) *esp % 4; align > 0; align--)
     {
-      *esp -= 1;
-      memcpy(*esp, &argv[argc], 1);
+      /* printf("align byte: %d\n", align); */
+      push_to_stack(esp, &argv[argc], sizeof(uint8_t));
     }
 
   /* Push argv[i] for all i */
   int i;
   for (i = argc; i >= 0; i--)
     {
-      *esp -= sizeof(char *);
-      memcpy(*esp, &argv[i], sizeof(char *));
+      push_to_stack(esp, &argv[i], sizeof(char *));
     }
 
-  /* Push argv */
   char *temp = *esp;
-  *esp -= sizeof(char **);
-  memcpy(*esp, &temp, sizeof(char **));
+  push_to_stack(esp, &temp, sizeof(char *)); /* Push &argv[0] */
+  push_to_stack(esp, &argc, sizeof(int));    /* Push argc */
+  push_to_stack(esp, temp, sizeof(void *));  /* Push fake return addr */
 
-  /* Push argc */
-  *esp -= sizeof(int);
-  memcpy(*esp, &argc, sizeof(int));
-
-  /* Push fake return addr */
-  *esp -= sizeof(void *);
-  memcpy(*esp, &argv[argc], sizeof(void *));
-
-  /* Free argv */
-  free (argv);
-  free (args_copy);
-
+  /* print stack
   char *p; 
   for (p = (char *)(*esp); p <= (char *)PHYS_BASE; p++)
     {
       printf("%p: %X\n", p, *p); 
     }
+  */
+
+  free (argv);
+  free (args_copy);
   return success;
 }
 
