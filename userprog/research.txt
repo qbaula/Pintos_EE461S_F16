@@ -45,3 +45,8 @@ filesys/filesys.h
   Contains all of the information necessary to talk to the filesys in pintos. All of it is done so should not need to change
   functions here unless we need to change a core functionality
   To be used by filesys commands (open/close/remove)
+  
+Child Processes:
+  Pintos will create a new child when a userprogram calls exec, unlike UNIX which offers fork. This means that there is no 
+  such thing as a process which can fork and do other things besides exec.
+  The parent then can call a wait() for a child or not.
