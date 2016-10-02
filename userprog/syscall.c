@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "devices/shutdown.h"
 #include "userprog/syscall.h"
+#include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -35,7 +36,7 @@ get_arg (void *esp, uint32_t *args, int num_args)
       }
   }
 
-  return 0;
+  return 1;
 }
 
 int *
@@ -64,6 +65,9 @@ syscall_handler (struct intr_frame *f UNUSED)
   // printf("(syscall handler) sys_no: %d\n", sys_no);
   // printf("(syscall handler) SYS_WRITE: %d\n", SYS_WRITE);
 
+  // struct thread *t = thread_current();
+  // printf ("(syscall_handler) current thread tid: %d\n", t->tid);
+
   switch (sys_no) 
     {
       case SYS_HALT:                   /* Halt the operating system. */
@@ -71,49 +75,95 @@ syscall_handler (struct intr_frame *f UNUSED)
           halt();
           break;
         }
+
       case SYS_EXIT:                   /* Terminate this process. */
+        {
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              exit (args[0]);
+            }
+          else
+            {
+              f->eax = -1;
+              exit (-1);
+            }
+          break;
+        }
+
+      case SYS_EXEC:                   /* Start another process. */
+        {
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              const char *cmd = get_paddr((const void *) args[0]);
+              if (cmd)
+                {
+                  f->eax = exec(cmd);
+                }
+              else
+                {
+                  f->eax = -1;
+                }
+            }
+          else
+            {
+              f->eax = -1;
+            }
+          break;
+        }
+
+      case SYS_WAIT:                   /* Wait for a child process to die. */
+        {
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              f->eax = wait(args[0]);
+            }
+          else
+            {
+              f->eax = -1;
+            }
+          break;
+        }
+
+      case SYS_CREATE:                 /* Create a file. */
         {
           thread_exit();
           break;
         }
-      case SYS_EXEC:                   /* Start another process. */
-        {
-          break;
-        }
-      case SYS_WAIT:                   /* Wait for a child process to die. */
-        {
-          break;
-        }
-      case SYS_CREATE:                 /* Create a file. */
-        {
-          break;
-        }
+        
       case SYS_REMOVE:                 /* Delete a file. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_OPEN:                   /* Open a file. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_FILESIZE:               /* Obtain a file's size. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_READ:                   /* Read from a file. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_WRITE:                  /* Write to a file. */
         {
           // printf("(syscall_handler) sys_write!\n");
 
-          if (!get_arg (f->esp, args, 3))
+          if (get_arg (f->esp, args, 3) > 0)
             {
               // printf("(syscall_handler) args[0]: %d\n", args[0]);
               // printf("(syscall_handler) args[1]: %p\n", args[1]);
               // printf("(syscall_handler) args[2]: %d\n", args[2]);
-
+              
               int *buf = get_paddr((const void *) args[1]);
               if(buf)
                 {
@@ -135,17 +185,29 @@ syscall_handler (struct intr_frame *f UNUSED)
 
           break;
         }
+
       case SYS_SEEK:                   /* Change position in a file. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_TELL:                   /* Report current position in a file. */
         {
+          thread_exit();
           break;
         }
+
       case SYS_CLOSE:                  /* Close a file. */
         {
+          thread_exit();
           break;
+        }
+      
+      default:
+        {
+          f->eax = -1;
+          thread_exit();
         }
     }
 }
@@ -169,6 +231,17 @@ exit (int status)
      * If the process's parent waits for it (see below), this is the status that will be returned.
      * Conventionally, a status of 0 indicates success and nonzero values indicate errors. 
      */
+  struct thread *curr = thread_current();
+  struct thread *parent = thread_get (curr->parent_tid);
+  if (parent)
+    {
+      struct child_process *cp_me = child_process_get (parent, curr->tid);
+      cp_me->exit_status = status;
+      sema_up(&(cp_me->exited));
+    }
+
+  printf ("%s: exit(%d)\n", curr->name, status);
+  thread_exit();
 }
 
 pid_t
@@ -180,6 +253,10 @@ exec (const char *cmd_line)
      * Thus, the parent process cannot return from the exec until it knows whether the child process successfully loaded its executable.
      * You must use appropriate synchronization to ensure this. 
      */
+
+  /* Check load is performed in process_execute() */
+  pid_t pid = process_execute (cmd_line);
+  return pid;
 }
 
 int
@@ -199,9 +276,9 @@ wait (pid_t pid)
      *       pid is a direct child of the calling process if and only if the calling process received pid as a return value from a successful call to exec.
      *
      * Note that children are not inherited: if A spawns child B and B spawns child process C, then A cannot wait for C, even if B is dead.
-     *
      * A call to wait(C) by process A must fail.
      * Similarly, orphaned processes are not assigned to a new parent if their parent process exits before they do.
+     *
      * The process that calls wait has already called wait on pid.
      * That is, a process may wait for any given child at most once. 
      *
@@ -217,6 +294,7 @@ wait (pid_t pid)
      *
      * Implementing this system call requires considerably more work than any of the rest.
      */
+  return process_wait (pid);
 }
 
 bool
