@@ -1,4 +1,3 @@
-#include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -8,6 +7,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/process.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -48,10 +48,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-  /*
-  struct thread *curr_thread;
-  curr_thread = thread_current();
-  */
+  struct thread *curr_thread = thread_current();
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -65,7 +62,23 @@ process_execute (const char *file_name)
   /* printf("(process_execute) address of fn_copy: %p\n", fn_copy); */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    {
+      palloc_free_page (fn_copy); 
+    }
+  else
+    {
+      struct list_elem *child_elem = list_back(&(curr_thread->child_processes));
+      struct child_process *child = list_entry(child_elem, struct child_process, elem);
+      
+      sema_down(&(child->loaded));
+      if (child->load_status < 0) 
+        {
+          /* fn_copy will have been freed in start_process() at this point */
+          list_remove (child_elem);
+          child_process_free (child);
+          tid = TID_ERROR; 
+        }
+    }
 
   /* printf("process_execute() in thread #%d\n", curr_thread->tid); */
   /* printf("process_execute() created thread #%d\n", tid); */
@@ -122,8 +135,21 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while(1);
-  return -1;
+  struct thread *curr = thread_current();
+  struct child_process *child = child_process_get (curr, child_tid);
+  int status;
+
+  if (!child)
+    { 
+      return -1;
+    }
+  sema_down (&child->exited);
+  status = child->exit_status;
+
+  list_remove (&(child->elem));
+  child_process_free (child);
+
+  return status;
 }
 
 /* Free the current process's resources. */
@@ -243,13 +269,17 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *args, void (**eip) (void), void **esp) 
 {
-  struct thread *t = thread_current ();
+  struct thread *t = thread_current();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
   int i;
   char *token, *args_copy, *save_ptr;
+
+  struct thread *parent = thread_get(t->parent_tid);
+  struct list_elem *e = list_back(&(parent->child_processes));
+  struct child_process *me = list_entry(e, struct child_process, elem);
 
   args_copy = (char *)(malloc((strlen(args) + 1) * sizeof(char)));
   strlcpy(args_copy, args, strlen(args)+1);
@@ -379,14 +409,19 @@ load (const char *args, void (**eip) (void), void **esp)
 
   success = true;
 
- done:
-  /* We arrive here whether the load is successful or not. */
-  /*
+ done: /* We arrive here whether the load is successful or not. */
   if (success)
-      printf ("load successful\n");
+    {
+      me->load_status = 1;
+      /* printf ("load successful\n"); */
+    }
   else
-      printf ("load unsuccessful\n");
-  */
+    {
+      me->load_status = -1;
+      /* printf ("load unsuccessful\n"); */
+    }
+  sema_up(&(me->loaded));
+
   free (args_copy);
   file_close (file);
   return success;
@@ -625,4 +660,42 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+struct child_process *
+child_process_init (pid_t pid)
+{
+  struct child_process *new_child = (struct child_process *) (malloc (sizeof (struct child_process)));
+  new_child->pid = pid;
+  new_child->exit_status = 0;
+  new_child->load_status = 0;
+  sema_init (&(new_child->exited), 0);
+  sema_init (&(new_child->loaded), 0);
+
+  return new_child;
+}
+
+void 
+child_process_free (struct child_process *cp)
+{
+  free (cp);
+}
+
+struct child_process *
+child_process_get (struct thread *parent, pid_t child_pid)
+{
+  struct list *cp = &(parent->child_processes);
+  struct list_elem *e;
+
+  for (e = list_begin (cp); e != list_end (cp);
+       e = list_next (e))
+    {
+      struct child_process *c = list_entry (e, struct child_process, elem);
+      if (c->pid == child_pid)
+        {
+          return c;
+        }
+    }
+
+  return NULL;
 }

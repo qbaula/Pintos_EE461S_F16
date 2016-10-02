@@ -2,8 +2,7 @@
 #define USERPROG_SYSCALL_H
 
 #include <stdbool.h>
-
-typedef int pid_t;
+#include "userprog/process.h"
 
 void syscall_init (void);
 

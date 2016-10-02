@@ -166,13 +166,14 @@ tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
-  struct thread *t;
+  struct thread *t, *parent;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
 
   ASSERT (function != NULL);
+  parent = thread_current();
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
@@ -182,6 +183,21 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->parent_tid = parent->tid;
+  list_init(&(t->child_processes));
+
+  /* Add struct child_process to current (parent) thread */
+  if (parent->parent_tid == 0)
+  {
+    list_init(&(parent->child_processes));
+  }
+  struct child_process *new_child = child_process_init(tid); 
+  list_push_back(&(parent->child_processes), &(new_child->elem));
+
+  /*
+  printf("(thread_create) parent thread tid: %d\n", parent->tid);
+  printf("(thread_create) child thread tid: %d\n", t->tid);
+  */
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -266,6 +282,24 @@ thread_current (void)
   ASSERT (t->status == THREAD_RUNNING);
 
   return t;
+}
+
+struct thread *
+thread_get (tid_t tid)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          return t;
+        }
+    }
+
+  return NULL;
 }
 
 /* Returns the running thread's tid. */
@@ -459,7 +493,18 @@ init_thread (struct thread *t, const char *name, int priority)
 
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
+  
   strlcpy (t->name, name, sizeof t->name);
+  // strtok_r ((t->name), ' ', &save_ptr);
+  int i;
+  for (i = 0; i < sizeof (t->name); i++)
+  {
+    if (t->name[i] == ' ')
+      {
+        t->name[i] = 0;
+      }
+  }
+
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
@@ -578,7 +623,7 @@ allocate_tid (void)
 
   return tid;
 }
-
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+

@@ -97,6 +97,8 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
+    tid_t parent_tid;                   /* Keep track of parent. */
+    struct list child_processes;        /* Keep track of all children. */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -120,6 +122,7 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
+struct thread *thread_get (tid_t tid);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
