@@ -175,6 +175,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
 }
 
 /* Sets up the CPU for running user code in the current
@@ -704,6 +705,7 @@ child_process_get (struct thread *parent, pid_t child_pid)
 bool is_ELF(struct file* file){
     struct Elf32_Ehdr ehdr;
     bool result = true;
+    printf("is_ELF\n");
     if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
         || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
         || ehdr.e_type != 2
@@ -717,6 +719,7 @@ bool is_ELF(struct file* file){
         result = false;
     }
     file_seek (file, 0);
+    printf("result: %d\n", (int) result);
     return result;
  
 }

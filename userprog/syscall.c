@@ -341,7 +341,6 @@ syscall_handler (struct intr_frame *f UNUSED)
                 /* Args good. */
                 int fd = (int) args[0];
                 void* v_buffer = (void*) args[1];
-                printf("%p", v_buffer);
                 unsigned size = (unsigned) args[2];
                 /* Validate pointer. */
                 if (ptr_valid(v_buffer, size)){
@@ -487,6 +486,21 @@ exit (int status)
     }
 
   printf ("%s: exit(%d)\n", curr->name, status);
+
+  int i;
+  for (i = 0; i < curr->open_files->size; i++)
+    {
+      if (curr->open_files->isOpen)
+        {
+          lock_acquire(&file_lock);
+          file_close (curr->open_files->files[i]);
+          lock_release(&file_lock);
+        }
+    }
+  free (curr->open_files->files);
+  free (curr->open_files->isOpen);
+  free (curr->open_files);
+
   thread_exit();
 }
 
@@ -598,6 +612,7 @@ open (const char *file)
   lock_acquire(&file_lock);
   struct file* f = filesys_open(file);
   lock_release(&file_lock);
+  // printf("open\n");
 
   if (f == NULL)
     {
@@ -608,6 +623,7 @@ open (const char *file)
     {
       /* File opened, add to thread's open files. */
       struct thread* t = thread_current();
+      // printf("open files: %d\n", t->open_files->size);
 
       /* Check for an open fd space in current thread's file list. */
       /* Could also be made easier if there was a variable keeping track
@@ -629,7 +645,7 @@ open (const char *file)
       if (!foundHole)
         {
           /* Allocate more memory for the file list. */
-          t->open_files->size *= 2;
+          t->open_files->size++;
           t->open_files->files = (struct file**) 
               realloc(t->open_files->files, sizeof(struct file*) * t->open_files->size);
           t->open_files->isOpen = (bool*) 
@@ -644,9 +660,9 @@ open (const char *file)
       /* Determine if this is an ELF file. If so, deny write access. */
       lock_acquire(&file_lock);
       if (is_ELF(f))
-      {
-        file_deny_write(f);
-      }
+        {
+          file_deny_write(f);
+        }
       lock_release(&file_lock);
     }
   
