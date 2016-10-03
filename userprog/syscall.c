@@ -38,7 +38,7 @@ bool is_open(struct thread* t, int fd){
     if (fd == 0 || fd == 1){isOpen = false;}
     else {
         /* Range check. */
-        if (!(fd < t->open_files->size)){isOpen = false;}
+        if (fd >= t->open_files->size || fd < 0){isOpen = false;}
         else {
             /* Range valid, check fd. */
             isOpen = t->open_files->isOpen[fd];
@@ -62,22 +62,28 @@ struct file* fd_to_file(struct thread* t, int fd){
  * Length in bytes are required to insure entire block of intended access is valid.
  * Returns true if user pointer range is valid, false else.  */
 bool ptr_valid(const void* ptr, int len){
+    /*
     printf("\n**********************\n");
     printf("Validating pointer:\n");
     printf("Virtual address: %p, Size: %d\n", ptr, len);
+    */
     bool isValid = true;
     /* No addresses in range may be above PHYS_BASE.
      * The largest address will always be (ptr + len) */
-    if (!is_user_vaddr(ptr + len)){isValid = false;}
+    if (ptr == NULL) 
+      {
+        isValid = false;
+      }
+    else if (!is_user_vaddr(ptr + len)){isValid = false;}
     else {
-        printf("Segment is below PHYS_BASE\n");
+        // printf("Segment is below PHYS_BASE\n");
         /* Check that every page in range is mapped. */
         struct thread* t = thread_current();
         const void* page_bottom; /* Points to the bottom of next page above current page */
         while (len >= 0){
             /* This page is in range, check if it is mapped. */
             void* phys_page = pagedir_get_page(t->pagedir, ptr);
-            printf("Physical page of pointer: %p\n", phys_page);
+            // printf("Physical page of pointer: %p\n", phys_page);
             if (phys_page == NULL){
                 /* Page in range unmapped. */
                 isValid = false;
@@ -86,11 +92,12 @@ bool ptr_valid(const void* ptr, int len){
             /* Find the bottom of the next page above this one. */
             page_bottom = pg_round_up(ptr) + 1;
             len -= (page_bottom - ptr); /* Page verified. Check if length extends to next page. */
-            printf("Size: %d\n", len);
+            // printf("Size: %d\n", len);
             ptr = page_bottom;
             
         }
     }
+    /*
     printf("Pointer is ");
     if (isValid){
         printf("valid\n");
@@ -99,6 +106,7 @@ bool ptr_valid(const void* ptr, int len){
         printf("invalid\n");
     }
     printf("**********************\n\n");
+    */
     return isValid;
 }
 
@@ -111,7 +119,6 @@ syscall_init (void)
 int
 get_arg (void *esp, uint32_t *args, int num_args)
 {
-    /* Validate stack pointer. */
   if(!ptr_valid(esp, num_args)){return -1;}
   uint32_t *sp = (uint32_t *) esp;
   int i;
@@ -135,7 +142,7 @@ get_paddr(const void *vaddr)
 {
     void *ptr = NULL;
     struct thread *t;
-    if(is_user_vaddr(vaddr))
+    if(is_user_vaddr(vaddr) && vaddr != NULL)
       {
         t = thread_current();
         /* Returns a null if page unmapped */
@@ -147,17 +154,19 @@ get_paddr(const void *vaddr)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
+  /* Validate stack pointer. */
+  if(!ptr_valid(f->esp, 0))
+    {
+      exit(-1);
+    }
 
   if (firstCall){
       lock_init(&file_lock);
       firstCall = false;
   }
 
-  int result;
   int sys_no = *((int *)f->esp);
   uint32_t args[3]; /* max args = 3 */
-
-
 
   switch (sys_no) 
     {
@@ -188,7 +197,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 //            printf("sys_exec\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
-              const char *cmd = get_paddr((const void *) args[0]);
+              const char *cmd = (const char *) get_paddr ((const void *) args[0]);
               if (cmd)
                 {
                   f->eax = exec(cmd);
@@ -223,19 +232,26 @@ syscall_handler (struct intr_frame *f UNUSED)
         {
 //             printf("sys_create\n");
              if (get_arg(f->esp, args, 2) > 0){
-                /* Args good. */
                 const char* v_file = (const char*) args[0];
+                if (v_file == NULL)
+                  {
+                    exit (-1);
+                  }
                 unsigned size = (unsigned) args[1];
                 /* Validate pointer. */
                 if (ptr_valid(v_file, size)){
                     /* Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file);    
-                    f->eax = create(p_file, size);                 
+                    const char* p_file = (const char*) get_paddr(v_file);   
+                    if (p_file)
+                      {
+                        f->eax = create(p_file, size);                 
+                      }
                 }
                 else {
                     /* One or more pages unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
+                    exit(-1);
                 }
             }     
             else {
@@ -254,7 +270,7 @@ syscall_handler (struct intr_frame *f UNUSED)
                 /* Validate pointer. */
                 if (ptr_valid(v_file, 0)){
                     /*Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file);
+                    const char* p_file = (const char*) get_paddr(v_file); // check if p_file is valid
                     f->eax = remove(p_file);
                 }
                 else {
@@ -276,16 +292,24 @@ syscall_handler (struct intr_frame *f UNUSED)
             if (get_arg(f->esp, args, 1) > 0){
                 /* Args good. */
                 const char* v_file = (const char*) args[0];
+                if (v_file == NULL)
+                  {
+                    exit (-1);
+                  }
                 /* Validiate pointer. */
                 if (ptr_valid(v_file, 0)){
                     /* Convert to paddr. */
                     const char* p_file = (const char*) get_paddr(v_file);
-                    f->eax = open(p_file);
+                    if (p_file)
+                      {
+                        f->eax = open(p_file);
+                      }
                 }
                 else {
                     /* Page unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
+                    exit(-1);
                 }
             }
             else {
@@ -312,21 +336,34 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_READ:                   /* Read from a file. */
         {
-//            printf("sys_read\n");
+            // printf("sys_read\n");
             if (get_arg(f->esp, args, 3) > 0){
                 /* Args good. */
                 int fd = (int) args[0];
                 void* v_buffer = (void*) args[1];
+                printf("%p", v_buffer);
                 unsigned size = (unsigned) args[2];
                 /* Validate pointer. */
                 if (ptr_valid(v_buffer, size)){
                     /* Convert to phys addr. */
                     void* p_buffer = (void*) get_paddr(v_buffer);
-                    f->eax = read(fd, p_buffer, size);
+                    if (p_buffer)
+                      {
+                        f->eax = read(fd, p_buffer, size);
+                      }
+                    else
+                      {
+                        f->eip = (void*) f->eax;
+                        f->eax = -1;
+                      }
                 }
-                /* One or more pages unmapped. */
-                f->eip = (void*) f->eax;
-                f->eax = -1;
+                else
+                  {
+                    /* One or more pages unmapped. */
+                    f->eip = (void*) f->eax;
+                    f->eax = -1;
+                    exit (-1);
+                  }
             }
             else {
                 /* Args Invalid. */
@@ -337,7 +374,6 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_WRITE:                  /* Write to a file. */
         { 
-//            printf("sys_write\n");
             if (get_arg(f->esp, args, 3) > 0){
                 /* Args good. */
                 int fd = (int) args[0];
@@ -347,12 +383,21 @@ syscall_handler (struct intr_frame *f UNUSED)
                 if (ptr_valid(v_buffer, size)){
                     /* Convert to phys addr. */
                     const void* p_buffer = (const void*) get_paddr(v_buffer);
-                    f->eax = write(fd, p_buffer, size);
+                    if (p_buffer)
+                      {
+                        f->eax = write(fd, p_buffer, size);
+                      }
+                    else
+                      {
+                        f->eip = (void*) f->eax;
+                        f->eax = -1;
+                      }
                 }
                 else {
                     /* One or more pages unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
+                    exit(-1);
                 }
             }
           break;
@@ -533,66 +578,79 @@ remove (const char *file)
 int
 open (const char *file) 
 {
-    /*
-     * Opens the file called file.
-     * Returns a nonnegative integer handle called a "file descriptor" (fd), or -1 if the file could not be opened.
-     *
-     * File descriptors numbered 0 and 1 are reserved for the console:
-     *     fd 0 (STDIN_FILENO) is standard input, fd 1 (STDOUT_FILENO) is standard output.
-     * The open system call will never return either of these file descriptors,
-     * which are valid as system call arguments only as explicitly described below.
-     *
-     * Each process has an independent set of file descriptors.
-     * File descriptors are not inherited by child processes.
-     *
-     * When a single file is opened more than once, whether by a single process or different processes, each open returns a new file descriptor.
-     * Different file descriptors for a single file are closed independently in separate calls to close and they do not share a file position.
-     */
-    /* Return value. */
-    int fd;
-    /* Open file. */
-    lock_acquire(&file_lock);
-    struct file* f = filesys_open(file);
-    lock_release(&file_lock);
-    if (f == NULL){fd = -1;}
-    else {
-        /* File opened, add to thread's open files. */
-        struct thread* t = thread_current();
-        /*Check for an open fd space. */
-        int i;
-        bool foundHole = false;
-        for (i = 0; i < t->open_files->size; i++){
-            if (!t->open_files->isOpen[i]){
-                /* Open space found. Add here. */
-                foundHole = true;
-                fd = i;
-                t->open_files->files[fd] = f;
-                t->open_files->isOpen[fd] = true;
-                /* Determine if this is an ELF file. If so, deny write access. */
-                lock_acquire(&file_lock);
-                if (is_ELF(f)){file_deny_write(f);}
-                lock_release(&file_lock);
-                break;
+  /*
+   * Opens the file called file.
+   * Returns a nonnegative integer handle called a "file descriptor" (fd), or -1 if the file could not be opened.
+   *
+   * File descriptors numbered 0 and 1 are reserved for the console:
+   *     fd 0 (STDIN_FILENO) is standard input, fd 1 (STDOUT_FILENO) is standard output.
+   * The open system call will never return either of these file descriptors,
+   * which are valid as system call arguments only as explicitly described below.
+   *
+   * Each process has an independent set of file descriptors.
+   * File descriptors are not inherited by child processes.
+   *
+   * When a single file is opened more than once, whether by a single process or different processes, each open returns a new file descriptor.
+   * Different file descriptors for a single file are closed independently in separate calls to close and they do not share a file position.
+   */
+  int fd; /* Return value. */
+  
+  lock_acquire(&file_lock);
+  struct file* f = filesys_open(file);
+  lock_release(&file_lock);
+
+  if (f == NULL)
+    {
+      fd = -1;
+    }
+  
+  else 
+    {
+      /* File opened, add to thread's open files. */
+      struct thread* t = thread_current();
+
+      /* Check for an open fd space in current thread's file list. */
+      /* Could also be made easier if there was a variable keeping track
+       * of how many files were open for the thread. */
+      int i;
+      bool foundHole = false;
+      for (i = 0; i < t->open_files->size; i++)
+        {
+          if (!t->open_files->isOpen[i])
+            {
+              /* Open space found. Add here. */
+              foundHole = true;
+              fd = i;
+              break;
             }
         }
-        if (!foundHole){
-            /* No holes avaliable in open file list. Append to file list. */
-            t->open_files->size++;
-            t->open_files->files = (struct file**) 
-                realloc(t->open_files->files, sizeof(struct file*) * t->open_files->size);
-            t->open_files->isOpen = (bool*) 
-                realloc(t->open_files->isOpen, sizeof(bool) * t->open_files->size);
-            fd = t->open_files->size - 1;
-            /* Append. */
-            t->open_files->files[fd] = f;
-            t->open_files->isOpen[fd] = true;
-            /* Determine if this is an ELF file. If so, deny write access. */
-            lock_acquire(&file_lock);
-            if (is_ELF(f)){file_deny_write(f);}
-            lock_release(&file_lock);
+
+      /* No holes avaliable in open file list. Append to file list. */
+      if (!foundHole)
+        {
+          /* Allocate more memory for the file list. */
+          t->open_files->size *= 2;
+          t->open_files->files = (struct file**) 
+              realloc(t->open_files->files, sizeof(struct file*) * t->open_files->size);
+          t->open_files->isOpen = (bool*) 
+              realloc(t->open_files->isOpen, sizeof(bool) * t->open_files->size);
+
+          fd = t->open_files->size - 1;
         }
+
+      t->open_files->files[fd] = f;
+      t->open_files->isOpen[fd] = true;
+      
+      /* Determine if this is an ELF file. If so, deny write access. */
+      lock_acquire(&file_lock);
+      if (is_ELF(f))
+      {
+        file_deny_write(f);
+      }
+      lock_release(&file_lock);
     }
-    return fd;
+  
+  return fd;
 }
 
 int
@@ -627,7 +685,7 @@ read (int fd, void *buffer, unsigned size)
     /* Return value. */
     int bytes_read;
     /* Cannot read from STDOUT. */
-    if (fd == 1){bytes_read = -1;}
+    if (fd == 1) {bytes_read = -1;}
     /* Handle STDIN. */
     else if (fd == 0){
         /* Read in 'size' number of characters form the console. */
