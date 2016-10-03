@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -80,6 +81,17 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+/* Struct handling the current process's open files. */
+struct file_list
+{
+    struct file** files;                /* Array of open process files, defined in filesys/file.c. */
+    bool* isOpen;                      /* Array corresponding to files array, denoting if given entry is valid, 
+                                          open file (the files array may have holes from closures). */
+    int size;                          /* Number of memory allocated spaces in files array.
+                                          can never be < 3, due to STDIN, STDOUT, STDERR. */ 
+};
+
 struct thread
   {
     /* Owned by thread.c. */
@@ -99,6 +111,8 @@ struct thread
 #endif
     tid_t parent_tid;                   /* Keep track of parent. */
     struct list child_processes;        /* Keep track of all children. */
+
+    struct file_list* open_files;               /* Process file list. */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

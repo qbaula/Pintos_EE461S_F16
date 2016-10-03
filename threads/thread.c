@@ -214,6 +214,17 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  /* Allocate space for open file list. */
+  t->open_files = (struct file_list*) malloc(sizeof(struct file_list));
+  t->open_files->size = 2; /* For STDIN and STDOUT. These fd's can never be altered. */
+  t->open_files->files = (struct file**) malloc(sizeof(struct file*) * t->open_files->size);
+  t->open_files->isOpen = (bool*) malloc(sizeof(bool) * t->open_files->size);
+  int i;
+  for (i = 0; i < t->open_files->size; i++){
+      t->open_files->isOpen[i] = true;
+      t->open_files->files[i] = NULL;
+  }
+
   /* Add to run queue. */
   thread_unblock (t);
 

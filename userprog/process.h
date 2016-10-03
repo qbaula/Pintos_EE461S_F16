@@ -24,6 +24,8 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+bool is_ELF(struct file* file);
+
 struct child_process *child_process_init(pid_t pid);
 void child_process_free (struct child_process *cp);
 struct child_process *child_process_get(struct thread *parent, pid_t child_pid);

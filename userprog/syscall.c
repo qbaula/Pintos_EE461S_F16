@@ -8,9 +8,99 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#include "devices/input.h"
+#include "userprog/pagedir.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+
+
 static void syscall_handler (struct intr_frame *);
 int get_arg (void *esp, uint32_t *args, int num_args);
 int *get_paddr (const void *vaddr);
+
+/* File system private functions. */
+struct file* fd_to_file(struct thread* t, int fd);
+bool ptr_valid(const void* ptr, int len);
+bool is_open(struct thread* t, int fd);
+
+/* File system concurrency lock. */
+bool firstCall = true;
+static struct lock file_lock;
+
+/* Checks if a threads's given file descriptor is valid/open.
+ * Assumes that this is for files and not STDIN/STDOUT. */
+bool is_open(struct thread* t, int fd){
+    /* Return value. */
+    bool isOpen;
+    /* Cannot be STDIN/STDOUT. */
+    if (fd == 0 || fd == 1){isOpen = false;}
+    else {
+        /* Range check. */
+        if (!(fd < t->open_files->size)){isOpen = false;}
+        else {
+            /* Range valid, check fd. */
+            isOpen = t->open_files->isOpen[fd];
+        }
+    }
+   return isOpen; 
+}
+
+/* File system common function converting a file descriptor (fd) to a file pointer.
+ * Returns a NULL if fd is STDIN, STDIN, or a not open file. */
+struct file* fd_to_file(struct thread* t, int fd){
+    /* Return value. */
+    struct file* f;    
+    /* Check validity of fd. */
+    if (!is_open(t, fd)){f = NULL;}
+    else {f = t->open_files->files[fd];}
+    return f;
+}
+
+/* Checks that a user passed pointer is contained in a valid, permissed virtual page.
+ * Length in bytes are required to insure entire block of intended access is valid.
+ * Returns true if user pointer range is valid, false else.  */
+bool ptr_valid(const void* ptr, int len){
+    printf("\n**********************\n");
+    printf("Validating pointer:\n");
+    printf("Virtual address: %p, Size: %d\n", ptr, len);
+    bool isValid = true;
+    /* No addresses in range may be above PHYS_BASE.
+     * The largest address will always be (ptr + len) */
+    if (!is_user_vaddr(ptr + len)){isValid = false;}
+    else {
+        printf("Segment is below PHYS_BASE\n");
+        /* Check that every page in range is mapped. */
+        struct thread* t = thread_current();
+        const void* page_bottom; /* Points to the bottom of next page above current page */
+        while (len >= 0){
+            /* This page is in range, check if it is mapped. */
+            void* phys_page = pagedir_get_page(t->pagedir, ptr);
+            printf("Physical page of pointer: %p\n", phys_page);
+            if (phys_page == NULL){
+                /* Page in range unmapped. */
+                isValid = false;
+                break;
+            }
+            /* Find the bottom of the next page above this one. */
+            page_bottom = pg_round_up(ptr) + 1;
+            len -= (page_bottom - ptr); /* Page verified. Check if length extends to next page. */
+            printf("Size: %d\n", len);
+            ptr = page_bottom;
+            
+        }
+    }
+    printf("Pointer is ");
+    if (isValid){
+        printf("valid\n");
+    }
+    else {
+        printf("invalid\n");
+    }
+    printf("**********************\n\n");
+    return isValid;
+}
 
 void
 syscall_init (void) 
@@ -21,6 +111,8 @@ syscall_init (void)
 int
 get_arg (void *esp, uint32_t *args, int num_args)
 {
+    /* Validate stack pointer. */
+  if(!ptr_valid(esp, num_args)){return -1;}
   uint32_t *sp = (uint32_t *) esp;
   int i;
   for (i = 0; i < num_args; i++) 
@@ -35,7 +127,6 @@ get_arg (void *esp, uint32_t *args, int num_args)
         return -1;
       }
   }
-
   return 1;
 }
 
@@ -56,28 +147,30 @@ get_paddr(const void *vaddr)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-//  printf ("system call!\n");
+
+  if (firstCall){
+      lock_init(&file_lock);
+      firstCall = false;
+  }
 
   int result;
   int sys_no = *((int *)f->esp);
   uint32_t args[3]; /* max args = 3 */
 
-  // printf("(syscall handler) sys_no: %d\n", sys_no);
-  // printf("(syscall handler) SYS_WRITE: %d\n", SYS_WRITE);
 
-  // struct thread *t = thread_current();
-  // printf ("(syscall_handler) current thread tid: %d\n", t->tid);
 
   switch (sys_no) 
     {
       case SYS_HALT:                   /* Halt the operating system. */
         {
+//            printf("sys_halt\n");
           halt();
           break;
         }
 
       case SYS_EXIT:                   /* Terminate this process. */
         {
+//            printf("sys_exit\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
               exit (args[0]);
@@ -92,6 +185,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_EXEC:                   /* Start another process. */
         {
+//            printf("sys_exec\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
               const char *cmd = get_paddr((const void *) args[0]);
@@ -113,6 +207,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_WAIT:                   /* Wait for a child process to die. */
         {
+//            printf("sys_wait\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
               f->eax = wait(args[0]);
@@ -126,86 +221,192 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_CREATE:                 /* Create a file. */
         {
-          thread_exit();
+//             printf("sys_create\n");
+             if (get_arg(f->esp, args, 2) > 0){
+                /* Args good. */
+                const char* v_file = (const char*) args[0];
+                unsigned size = (unsigned) args[1];
+                /* Validate pointer. */
+                if (ptr_valid(v_file, size)){
+                    /* Convert to phys addr. */
+                    const char* p_file = (const char*) get_paddr(v_file);    
+                    f->eax = create(p_file, size);                 
+                }
+                else {
+                    /* One or more pages unmapped. */
+                    f->eip = (void*) f->eax;
+                    f->eax = -1;
+                }
+            }     
+            else {
+                /* Invalid Args. */
+                f->eax = -1;
+            }
           break;
         }
         
       case SYS_REMOVE:                 /* Delete a file. */
         {
-          thread_exit();
+//            printf("sys_remove\n");
+            if (get_arg(f->esp, args, 1) > 0){
+                /* Args good. */
+                const char* v_file = (const char*) args[0];
+                /* Validate pointer. */
+                if (ptr_valid(v_file, 0)){
+                    /*Convert to phys addr. */
+                    const char* p_file = (const char*) get_paddr(v_file);
+                    f->eax = remove(p_file);
+                }
+                else {
+                    /* Page unmapped. */
+                    f->eip = (void*) f->eax;
+                    f->eax = -1;
+                }
+            }
+            else {
+                /* Invalid Arg. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_OPEN:                   /* Open a file. */
         {
-          thread_exit();
+//            printf("sys_open\n");
+            if (get_arg(f->esp, args, 1) > 0){
+                /* Args good. */
+                const char* v_file = (const char*) args[0];
+                /* Validiate pointer. */
+                if (ptr_valid(v_file, 0)){
+                    /* Convert to paddr. */
+                    const char* p_file = (const char*) get_paddr(v_file);
+                    f->eax = open(p_file);
+                }
+                else {
+                    /* Page unmapped. */
+                    f->eip = (void*) f->eax;
+                    f->eax = -1;
+                }
+            }
+            else {
+                /* Invalid Arg. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_FILESIZE:               /* Obtain a file's size. */
         {
-          thread_exit();
+//            printf("sys_filesize\n");
+            if (get_arg(f->esp, args, 1) > 0){
+                /* Args good. */
+                int fd = (int) args[0];
+                f->eax = filesize(fd);
+            }
+            else {
+                /* Invalid Arg. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_READ:                   /* Read from a file. */
         {
-          thread_exit();
+//            printf("sys_read\n");
+            if (get_arg(f->esp, args, 3) > 0){
+                /* Args good. */
+                int fd = (int) args[0];
+                void* v_buffer = (void*) args[1];
+                unsigned size = (unsigned) args[2];
+                /* Validate pointer. */
+                if (ptr_valid(v_buffer, size)){
+                    /* Convert to phys addr. */
+                    void* p_buffer = (void*) get_paddr(v_buffer);
+                    f->eax = read(fd, p_buffer, size);
+                }
+                /* One or more pages unmapped. */
+                f->eip = (void*) f->eax;
+                f->eax = -1;
+            }
+            else {
+                /* Args Invalid. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_WRITE:                  /* Write to a file. */
-        {
-          // printf("(syscall_handler) sys_write!\n");
-
-          if (get_arg (f->esp, args, 3) > 0)
-            {
-              // printf("(syscall_handler) args[0]: %d\n", args[0]);
-              // printf("(syscall_handler) args[1]: %p\n", args[1]);
-              // printf("(syscall_handler) args[2]: %d\n", args[2]);
-              
-              int *buf = get_paddr((const void *) args[1]);
-              if(buf)
-                {
-                  // printf("(syscall_handler) page found, paddr: %p\n", buf);
-                  f->eax = write ((int) args[0], (const void *) buf, (unsigned) args[2]);
+        { 
+//            printf("sys_write\n");
+            if (get_arg(f->esp, args, 3) > 0){
+                /* Args good. */
+                int fd = (int) args[0];
+                const void* v_buffer = (void*) args[1];
+                unsigned size = (unsigned) args[2];
+                /* Validate pointer. */
+                if (ptr_valid(v_buffer, size)){
+                    /* Convert to phys addr. */
+                    const void* p_buffer = (const void*) get_paddr(v_buffer);
+                    f->eax = write(fd, p_buffer, size);
                 }
-              else 
-                { /* page fault */
-                  // printf("(syscall_handler) page fault!\n");
-                  f->eip = f->eax;
-                  f->eax = -1;
+                else {
+                    /* One or more pages unmapped. */
+                    f->eip = (void*) f->eax;
+                    f->eax = -1;
                 }
             }
-          else
-            {
-              // printf("(syscall_handler) args invalid\n");
-              f->eax = -1;
-            }
-
           break;
         }
 
       case SYS_SEEK:                   /* Change position in a file. */
         {
-          thread_exit();
+//            printf("sys_seek\n");
+            if (get_arg(f->esp, args, 2) > 0){
+                /* Args good. */
+                int fd = (int) args[0];
+                unsigned pos = (unsigned) args[1];
+                seek(fd, pos);
+            }
+            else {
+                /* Args invalid. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_TELL:                   /* Report current position in a file. */
         {
-          thread_exit();
+//            printf("sys_tell\n");
+            if (get_arg(f->esp, args, 1) > 0){
+                /* Arg good. */
+                int fd = (int) args[0];
+                f->eax = tell(fd);
+            }
+            else {
+                /* Args invalid. */
+                f->eax = -1;
+            }
           break;
         }
 
       case SYS_CLOSE:                  /* Close a file. */
         {
-          thread_exit();
+//            printf("sys_close\n");
+            if (get_arg(f->esp, args, 1) > 0){
+                /* Arg good. */
+                int fd = (int) args[0];
+                close(fd);
+            }
+            else {
+                /* Arg inavlid. */
+                f->eax = -1;
+            }
           break;
         }
       
       default:
         {
+//            printf("sys_default\n");
           f->eax = -1;
           thread_exit();
         }
@@ -306,6 +507,10 @@ create (const char *file, unsigned initial_size)
      *
      * Creating a new file does not open it: opening the new file is a separate operation which would require a open system call. 
      */
+    lock_acquire(&file_lock);
+    bool success = filesys_create(file, initial_size);
+    lock_release(&file_lock);
+    return success;
 }
 
 bool
@@ -318,6 +523,11 @@ remove (const char *file)
      * A file may be removed regardless of whether it is open or closed, and removing an open file does not close it.
      * See Removing an Open File, for details. 
      */
+    lock_acquire(&file_lock);
+    /* Implementation not complete. */
+    bool success = filesys_remove(file);
+    lock_release(&file_lock);
+    return success;
 }
 
 int
@@ -338,6 +548,51 @@ open (const char *file)
      * When a single file is opened more than once, whether by a single process or different processes, each open returns a new file descriptor.
      * Different file descriptors for a single file are closed independently in separate calls to close and they do not share a file position.
      */
+    /* Return value. */
+    int fd;
+    /* Open file. */
+    lock_acquire(&file_lock);
+    struct file* f = filesys_open(file);
+    lock_release(&file_lock);
+    if (f == NULL){fd = -1;}
+    else {
+        /* File opened, add to thread's open files. */
+        struct thread* t = thread_current();
+        /*Check for an open fd space. */
+        int i;
+        bool foundHole = false;
+        for (i = 0; i < t->open_files->size; i++){
+            if (!t->open_files->isOpen[i]){
+                /* Open space found. Add here. */
+                foundHole = true;
+                fd = i;
+                t->open_files->files[fd] = f;
+                t->open_files->isOpen[fd] = true;
+                /* Determine if this is an ELF file. If so, deny write access. */
+                lock_acquire(&file_lock);
+                if (is_ELF(f)){file_deny_write(f);}
+                lock_release(&file_lock);
+                break;
+            }
+        }
+        if (!foundHole){
+            /* No holes avaliable in open file list. Append to file list. */
+            t->open_files->size++;
+            t->open_files->files = (struct file**) 
+                realloc(t->open_files->files, sizeof(struct file*) * t->open_files->size);
+            t->open_files->isOpen = (bool*) 
+                realloc(t->open_files->isOpen, sizeof(bool) * t->open_files->size);
+            fd = t->open_files->size - 1;
+            /* Append. */
+            t->open_files->files[fd] = f;
+            t->open_files->isOpen[fd] = true;
+            /* Determine if this is an ELF file. If so, deny write access. */
+            lock_acquire(&file_lock);
+            if (is_ELF(f)){file_deny_write(f);}
+            lock_release(&file_lock);
+        }
+    }
+    return fd;
 }
 
 int
@@ -346,6 +601,17 @@ filesize (int fd)
     /*
      * Returns the size, in bytes, of the file open as fd. 
      */
+    /* Return value. */
+    int size;
+    struct thread* t = thread_current();
+    /* Check for valid fd. */
+    if (!is_open(t , fd)){size = -1;}
+    else {
+        lock_acquire(&file_lock);
+        size = file_length(fd_to_file(t, fd));
+        lock_release(&file_lock);
+    }
+   return size;
 }
 
 int
@@ -358,6 +624,33 @@ read (int fd, void *buffer, unsigned size)
      *
      * Fd 0 reads from the keyboard using input_getc(). 
      */
+    /* Return value. */
+    int bytes_read;
+    /* Cannot read from STDOUT. */
+    if (fd == 1){bytes_read = -1;}
+    /* Handle STDIN. */
+    else if (fd == 0){
+        /* Read in 'size' number of characters form the console. */
+        char* buf = (char*) buffer;
+        unsigned i;
+        for (i = 0; i < size; i++){
+            buf[i] = input_getc();
+        }
+        /* Null termination. */
+        buf[size] = 0;
+        bytes_read = size;
+    }
+    else{
+        /* Read from file. */
+        struct file* f = fd_to_file(thread_current(), fd);
+        if (f == NULL){bytes_read = -1;}
+        else {
+            lock_acquire(&file_lock);
+            bytes_read = (int) file_read(f, buffer, size);
+            lock_release(&file_lock);
+        }
+    }
+    return bytes_read;
 }
 
 int
@@ -376,16 +669,27 @@ write (int fd, const void *buffer, unsigned size)
      * Otherwise, lines of text output by different processes may end up interleaved on the console,
      * confusing both human readers and our grading scripts.
      */
-
-  if (fd == 0)
-    {
-      return -1;
+    /* Return value. */
+//    printf("fd: %d, buffer: %p, size: %d\n", fd, buffer, size);
+    int bytes_written;
+    /* Cannot write to STDIN. */
+    if (fd == 0){bytes_written = -1;}
+    /* Handle STDOUT. */
+    else if (fd == 1){
+        putbuf(buffer, size);
+        bytes_written = size;
+    }    
+    else {
+        /* Write to file. */
+        struct file* f = fd_to_file(thread_current(), fd);
+        if (f == NULL){bytes_written = -1;}
+        else {
+            lock_acquire(&file_lock);
+            bytes_written = (int) file_write(f, buffer, size);
+            lock_release(&file_lock);
+        }
     }
-  if (fd == STDOUT_FILENO) 
-    {
-      putbuf(buffer, size);
-      return size;
-    }
+    return bytes_written;
 }
 
 void
@@ -401,6 +705,13 @@ seek (int fd, unsigned position)
      * (However, in Pintos files have a fixed length until project 4 is complete, so writes past end of file will return an error.)
      * These semantics are implemented in the file system and do not require any special effort in system call implementation.
      */
+    struct thread* t = thread_current();
+    if (is_open(t, fd)){
+        lock_acquire(&file_lock);
+        file_seek(fd_to_file(t, fd), position);
+        lock_release(&file_lock);  
+
+    }
 }
 
 unsigned
@@ -409,6 +720,16 @@ tell (int fd)
     /*
      * Returns the position of the next byte to be read or written in open file fd, expressed in bytes from the beginning of the file. 
      */
+    /* Return value. */
+    unsigned pos;
+    struct thread* t = thread_current();
+    if (!is_open(t, fd)){pos = -1;}
+    else {
+        lock_acquire(&file_lock);
+        pos = file_tell(fd_to_file(t, fd));
+        lock_release(&file_lock); 
+    }
+    return pos; 
 }
 
 void
@@ -418,4 +739,14 @@ close (int fd)
      * Closes file descriptor fd.
      * Exiting or terminating a process implicitly closes all its open file descriptors, as if by calling this function for each one. 
      */
+    struct thread* t = thread_current();
+    /* Check fd validity. */
+    if (is_open(t, fd)){
+        /* File is open. */
+        lock_acquire(&file_lock);
+        file_close(fd_to_file(t, fd));
+        lock_release(&file_lock);
+        t->open_files->files[fd] = NULL;
+        t->open_files->isOpen[fd] = false; 
+    }
 }
