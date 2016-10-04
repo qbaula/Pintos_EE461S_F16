@@ -659,8 +659,10 @@ open (const char *file)
       
       /* Determine if this is an ELF file. If so, deny write access. */
       lock_acquire(&file_lock);
-      if (is_ELF(f))
-        {
+	  //printf("File name wanted to open: %s; Thread name: %s\n", file, t->name);
+      //if (strcmp(file, t->name) == 0)
+      if(is_ELF(f, file))  
+		{
           file_deny_write(f);
         }
       lock_release(&file_lock);
@@ -763,6 +765,7 @@ write (int fd, const void *buffer, unsigned size)
             lock_release(&file_lock);
         }
     }
+	// printf("Returning Bytes: %d\n", bytes_written);
     return bytes_written;
 }
 

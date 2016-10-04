@@ -702,24 +702,25 @@ child_process_get (struct thread *parent, pid_t child_pid)
 }
 
 /* This function returns a boolean determining if the passed file is an ELF executable. */
-bool is_ELF(struct file* file){
+bool is_ELF(struct file* file, char *file_name){
     struct Elf32_Ehdr ehdr;
-    bool result = true;
-    printf("is_ELF\n");
+	bool result = true;
     if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
         || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
         || ehdr.e_type != 2
         || ehdr.e_machine != 3
         || ehdr.e_version != 1
         || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
-        || ehdr.e_phnum > 1024) 
+        || ehdr.e_phnum > 1024
+		) 
     {
-        /* Not an ELF file. */
-
         result = false;
     }
+	if(result)
+	  {
+		result = thread_name_exists(file_name);
+	  }
     file_seek (file, 0);
-    printf("result: %d\n", (int) result);
+    //printf("result ELF: %d\n", (int) result);
     return result;
- 
 }

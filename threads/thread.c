@@ -638,3 +638,22 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+/* Checks to see if thread exists with name */
+bool
+thread_name_exists(char *name)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if(strcmp(name, t->name) == 0)
+	    {
+		  return true;
+	    } 
+    }
+  return false;
+}
+
+
