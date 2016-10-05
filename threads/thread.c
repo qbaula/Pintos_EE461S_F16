@@ -7,6 +7,7 @@
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
@@ -507,7 +508,7 @@ init_thread (struct thread *t, const char *name, int priority)
   
   strlcpy (t->name, name, sizeof t->name);
   // strtok_r ((t->name), ' ', &save_ptr);
-  int i;
+  unsigned int i;
   for (i = 0; i < sizeof (t->name); i++)
   {
     if (t->name[i] == ' ')

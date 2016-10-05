@@ -661,7 +661,7 @@ open (const char *file)
       lock_acquire(&file_lock);
 	  //printf("File name wanted to open: %s; Thread name: %s\n", file, t->name);
       //if (strcmp(file, t->name) == 0)
-      if(is_ELF(f, file))  
+      if(is_ELF(f, (char *) file))  
 		{
           file_deny_write(f);
         }
