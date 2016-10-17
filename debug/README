@@ -1,0 +1,15 @@
+This document describes how to use the python debugging tool for pintos.
+
+Each project folder will have its own set of user debugging compiler directives inside its source code. They must adhere to the following syntax to work:
+
+#ifdef debug<x>
+//Debug code goes here
+#endif
+
+Where 'x' is an integer greater than or equal to 1, i.e. debug3, debug14, ...
+
+Inside the debug directory, go down into the directory for the project you wish to recompile (userprog, vm, threads, or filesys) and run './make.py <x1> <x2> <x3> ...'. This will build the folder with the 'debug<x1>, debug<x2>, debug<x3>, ...' directives. Running './make.py' builds the folder with no directives. Note, two directive definitions in two seperate folders should not interfere because they are built seperatley. For example, debug7 in vm and debug7 in threads refer to different directives.
+
+There is no need for error checking, and no harm in invalid arguments. For example if you run './make.py dog cat horse' they complier will define 'debugdog, debugcat, and debughorse', but these directives should not exist so there is no effect in the compilation.
+
+The 'descrip' document in each project folder is meant to document each debug statment for quick reference. It is not required to document each statment but will make life much easier as development of pintos continues. The 'Statments: <x>' line at the top of each 'descrip' document keeps track of the number of total debug statments for that project folder. Please update this number whenever adding debugging statments to avoid the same directive executing multiple debug seqencies. (Konstantyn would refer to this as 'aliasing').
