@@ -1,0 +1,2 @@
+/* Page implementation for vim.
+ */
