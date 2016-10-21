@@ -4,7 +4,7 @@
 /* Page implementation for vim.
  */
 
-void free_page (struct *sup_pte);
+void free_page (struct sup_pte *ptr);
 
 void 
 vm_page_table_init(){
@@ -31,7 +31,7 @@ vm_free_page(void *ptr){
 /* Function to talk with the frame based on the sup_pte
  */
 void
-free_page(struct *sup_pte ptr){
+free_page(struct sup_pte *ptr){
 	
 }
 

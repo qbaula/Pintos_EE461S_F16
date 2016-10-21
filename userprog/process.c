@@ -509,7 +509,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      printf("Error 1\n");
+      uint8_t *kpage = frame_get ();
+      printf("Error 2\n");
       if (kpage == NULL)
         return false;
 
@@ -554,7 +556,7 @@ setup_stack (void **esp, const char *args)
 
   /* printf("we setting up stack!\n"); */
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_get ();
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);

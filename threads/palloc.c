@@ -39,6 +39,13 @@ static struct pool kernel_pool, user_pool;
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
 static bool page_from_pool (const struct pool *, void *page);
+size_t num_user_pages;
+
+int 
+palloc_get_num_user_pages ()
+{
+  return (int) num_user_pages;
+}
 
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
    pages are put into the user pool. */
@@ -162,6 +169,10 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   page_cnt -= bm_pages;
 
   printf ("%zu pages available in %s.\n", page_cnt, name);
+  if (!strcmp(name, "user pool"))
+  {
+    num_user_pages = page_cnt;
+  }
 
   /* Initialize the pool. */
   lock_init (&p->lock);

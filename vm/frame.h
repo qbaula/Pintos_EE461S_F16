@@ -3,22 +3,20 @@
 
 #include "page.h"
 #include "../lib/kernel/list.h"
-/* Frame implementation for vm
+
+/*
+ * Frame implementation for vm
  */
-
 struct frame_table_entry {
-	struct thread *owner_thread;
+	struct thread *owner;
 	struct sup_pte *page;
-	void *esp;
-
-	struct list_elem elem;
+	void *frame_addr;
 };
-
 
 void frame_table_init(void);
 
-void *frame_get(); // allocates owner threads and page to determine its taken
-void frame_free(void *frame); // deallocates ^^
-void *frame_evict(); // calls swap to disk function and clears curr
+void *frame_get();              // get a free page that is resident in memory
+void frame_free(void *frame);   // deallocates a frame (i.e. no owner)
+void *frame_evict();            // calls swap to disk function and clears curr
 
 #endif
