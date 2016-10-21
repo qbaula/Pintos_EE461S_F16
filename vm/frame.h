@@ -2,6 +2,7 @@
 #define VM_FRAME_H
 
 #include "page.h"
+#include "../lib/kernel/list.h"
 /* Frame implementation for vm
  */
 
@@ -9,6 +10,8 @@ struct frame_table_entry {
 	struct thread *owner_thread;
 	struct sup_pte *page;
 	void *esp;
+
+	struct list_elem elem;
 };
 
 

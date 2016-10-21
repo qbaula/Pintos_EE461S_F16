@@ -13,6 +13,7 @@ struct sup_pte{
 	bool valid;
 	bool accessed;
 	bool dirty;
+	bool writable;
 	
 	/* true = pte in swap, else pte in frame table */
 	bool swap;
