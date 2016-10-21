@@ -1,8 +1,12 @@
 #include "frame.h"
+#include "lib/kernel/list.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
-#include "lib/kernel/list.h"
 #include "threads/thread.h"
+#include "userprog/pagedir.h"
+#include "vm/frame.h"
+#include "vm/page.h"
+
 
 /* 
  * Frame implementation for VM list or simple array?
@@ -25,14 +29,14 @@ frame_table_init ()
       frame_ptr = palloc_get_page(PAL_USER);
       frame_table[i].frame_addr = frame_ptr; 
       frame_table[i].owner= NULL;
-      frame_table[i].page = NULL;
+      frame_table[i].spte = NULL;
     }
 }
 
 /*
  * Goes through the frame table to find a frame that's available.
  */
-void *
+struct frame_table_entry *
 frame_get()
 {
   int i;
@@ -41,8 +45,28 @@ frame_get()
       if (frame_table[i].owner == NULL)
         {
           frame_table[i].owner = thread_current();
-          return frame_table[i].frame_addr;
+          return &frame_table[i];
         }
+    }
+}
+
+struct frame_table_entry *
+frame_map(struct sup_pte *spte)
+{
+  struct thread *t = thread_current();
+  struct frame_table_entry *fte = frame_get();
+  fte->spte = spte;
+
+  bool success = (pagedir_get_page (t->pagedir, spte->user_va) == NULL
+          && pagedir_set_page (t->pagedir, spte->user_va, fte->frame_addr, spte->writable));
+  if (success)
+    {
+      return fte;
+    }
+  else
+    {
+      // deallocate frame
+      return NULL;
     }
 }
 
@@ -50,7 +74,7 @@ frame_get()
  * Frees the frame corresponding to the pointer.
  */
 void 
-frame_free(void *frame)
+frame_free(struct frame_table_entry *frame)
 {
 	
 }

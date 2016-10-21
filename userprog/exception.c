@@ -5,6 +5,8 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 
 /* Number of page faults processed. */
@@ -154,14 +156,42 @@ page_fault (struct intr_frame *f)
     {
       exit(-1);
     }
+
+  struct sup_pte *spte = get_spte (fault_addr);
+#if debug9
+  print_spte(spte);
+#endif
+  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+  if (spte == NULL)
+    {
+      printf ("Page fault at %p: %s error %s page in %s context.\n",
+              fault_addr,
+              not_present ? "not present" : "rights violation",
+              write ? "writing" : "reading",
+              user ? "user" : "kernel");
+      kill (f);
+    }
+  else
+    {
+      struct frame_table_entry *fte = frame_map(spte);
+      if (fte == NULL)
+        {
+          printf ("Out of frames\n");
+          kill (f);
+        }
+
+      if (spte->is_file)
+        {
+          if (file_read (spte->file, fte->frame_addr, spte->read_bytes) != spte->read_bytes)
+            {
+              printf ("\nUnable to read all bytes.\n");
+              kill (f);
+            }
+          memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
+        }
+    }
 }
 

@@ -226,6 +226,9 @@ thread_create (const char *name, int priority,
       t->open_files->files[i] = NULL;
   }
 
+  /* Initialize supplemental page table */
+  vm_page_table_init(&t->spt);
+
   /* Add to run queue. */
   thread_unblock (t);
 

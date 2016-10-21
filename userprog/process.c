@@ -304,6 +304,9 @@ load (const char *args, void (**eip) (void), void **esp)
   /* Open executable file. */
   token = strtok_r (args_copy, " ", &save_ptr); 
   /* printf("executable name: %s\n", token); */
+#if debug6
+  printf("executable: %s\n", token);
+#endif
   file = filesys_open (token);
   if (file == NULL) 
     {
@@ -326,8 +329,12 @@ load (const char *args, void (**eip) (void), void **esp)
       goto done; 
     }
 
+
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
+#if debug7
+  printf("program header number: %d\n", ehdr.e_phnum);
+#endif
   for (i = 0; i < ehdr.e_phnum; i++) 
     {
       struct Elf32_Phdr phdr;
@@ -495,6 +502,10 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
+#if debug5
+  printf("Loading in a segment\n");
+  printf("read_bytes: %d\n", read_bytes);
+#endif
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -509,30 +520,39 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = frame_get ();
-      if (kpage == NULL)
+      // uint8_t *kpage = frame_get ();
+      bool success = alloc_code_spte(file, ofs, upage, page_read_bytes, page_zero_bytes, writable);
+      if (!success)
         return false;
 
       /* Load this page. */
+      /*
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
           palloc_free_page (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      */
 
       /* Add the page to the process's address space. */
+      /*
       if (!install_page (upage, kpage, writable)) 
         {
           palloc_free_page (kpage);
           return false; 
         }
+      */
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
+#ifdef debug2
+  print_all_spte();
+#endif
   return true;
 }
 
@@ -550,11 +570,18 @@ static bool
 setup_stack (void **esp, const char *args) 
 {
   uint8_t *kpage;
-  bool success = false;
-
   /* printf("we setting up stack!\n"); */
 
-  kpage = frame_get ();
+  // kpage = frame_get ();
+  bool success = alloc_blank_spte(((uint8_t *) PHYS_BASE) - PGSIZE);
+  if (success)
+    {
+#if debug8
+      printf("Stack SPTE alloc succesful\n");
+#endif
+      *esp = PHYS_BASE;
+    }
+  /*
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -568,6 +595,7 @@ setup_stack (void **esp, const char *args)
           return 0;
         }
     }
+    */
 
   char *args_copy, *token, *save_ptr;
   int argc, argv_cap;

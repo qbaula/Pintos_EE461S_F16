@@ -112,7 +112,9 @@ struct thread
     tid_t parent_tid;                   /* Keep track of parent. */
     struct list child_processes;        /* Keep track of all children. */
 
-    struct file_list* open_files;               /* Process file list. */
+    struct file_list* open_files;       /* Process file list. */
+
+    struct list spt;                    /* Supplemental page table */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
