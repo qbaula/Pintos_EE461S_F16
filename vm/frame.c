@@ -7,29 +7,26 @@
 /* 
  * Frame implementation for VM list or simple array?
  */
-struct frame_table_entry **frame_table;
+struct frame_table_entry *frame_table;
 
 void
 frame_table_init ()
 {
   int user_pages = palloc_get_num_user_pages ();
-  frame_table = (struct frame_table_entry **)(malloc(sizeof(struct frame_table_entry *) * user_pages));
+  frame_table = (struct frame_table_entry *)(malloc(sizeof(struct frame_table_entry) * user_pages));
+  printf("size of frame_table: %d\n", sizeof(struct frame_table_entry) * user_pages);
 
   void *frame_ptr;
   struct frame_table_entry *fte_ptr; 
   int i = 0;
-  while((frame_ptr = palloc_get_page(PAL_USER)) != NULL)
+  // while((frame_ptr = palloc_get_page(PAL_USER)) != NULL)
+  for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      fte_ptr = malloc(sizeof(struct frame_table_entry));
-      fte_ptr->frame_addr = frame_ptr; 
-      fte_ptr->owner= NULL;
-      fte_ptr->page = NULL;
-
-      frame_table[i] = fte_ptr;
-      i++;
+      frame_ptr = palloc_get_page(PAL_USER);
+      frame_table[i].frame_addr = frame_ptr; 
+      frame_table[i].owner= NULL;
+      frame_table[i].page = NULL;
     }
-
-  printf("joe sucks dick\n");
 }
 
 /*
@@ -41,10 +38,10 @@ frame_get()
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i]->owner == NULL)
+      if (frame_table[i].owner == NULL)
         {
-          frame_table[i]->owner = thread_current();
-          return frame_table[i]->frame_addr;
+          frame_table[i].owner = thread_current();
+          return frame_table[i].frame_addr;
         }
     }
 }

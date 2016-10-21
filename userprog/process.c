@@ -509,9 +509,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      printf("Error 1\n");
       uint8_t *kpage = frame_get ();
-      printf("Error 2\n");
       if (kpage == NULL)
         return false;
 
