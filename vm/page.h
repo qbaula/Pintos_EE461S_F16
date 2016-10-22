@@ -7,7 +7,8 @@
 #include "filesys/off_t.h"
 #include "filesys/file.h"
 
-
+#define HEAP_STACK_DIVIDE 0xB0000000
+#define CODE_START 0x8048000
 
 /* Page implementation for VM, outside programs will only have access to this
  * head file. They should NOT access frame.h unless running init. Though

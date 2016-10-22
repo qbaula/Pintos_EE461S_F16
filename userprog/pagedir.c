@@ -100,6 +100,7 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
 {
   uint32_t *pte;
 
+  //printf("upage: %p\n", upage);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (pg_ofs (kpage) == 0);
   ASSERT (is_user_vaddr (upage));
@@ -133,7 +134,9 @@ pagedir_get_page (uint32_t *pd, const void *uaddr)
   if (pte != NULL && (*pte & PTE_P) != 0)
     return pte_get_page (*pte) + pg_ofs (uaddr);
   else
-    return NULL;
+    {
+      return NULL;
+    }
 }
 
 /* Marks user virtual page UPAGE "not present" in page

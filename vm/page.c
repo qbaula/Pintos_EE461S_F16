@@ -8,8 +8,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-#define HEAP_STACK_DIVIDE 0xB000000
-#define CODE_START 0x8048000
 /*
  * Page implementation for vim.
  */
@@ -112,7 +110,7 @@ alloc_blank_spte(uint8_t *upage)
       return false;
     }
 
-  new_spte->user_va = upage;
+  new_spte->user_va = pg_round_down(upage);
 
   new_spte->valid = 0;
   new_spte->writable = true;
@@ -126,6 +124,14 @@ alloc_blank_spte(uint8_t *upage)
   new_spte->zero_bytes = 0;
 
   spte_insert(&thread_current()->spt, new_spte); 
+
+  struct frame_table_entry *fte = frame_map (new_spte);
+  if (!fte)
+    {
+      PANIC ("Can't map to page table\n");
+    }
+  memset(fte->frame_addr, 0, PGSIZE);
+
   return true;
 }
 

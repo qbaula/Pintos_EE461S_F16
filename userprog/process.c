@@ -431,7 +431,7 @@ load (const char *args, void (**eip) (void), void **esp)
   sema_up(&(me->loaded));
 
   free (args_copy);
-  file_close (file);
+  //file_close (file);
   return success;
 }
 
@@ -658,13 +658,14 @@ setup_stack (void **esp, const char *args)
   push_to_stack(esp, &argc, sizeof(int));    /* Push argc */
   push_to_stack(esp, temp, sizeof(void *));  /* Push fake return addr */
 
-  /* print stack
+  //print stack
+#if debugstack
   char *p; 
   for (p = (char *)(*esp); p <= (char *)PHYS_BASE; p++)
     {
       printf("%p: %X\n", p, *p); 
     }
-  */
+#endif
 
   free (argv);
   free (args_copy);

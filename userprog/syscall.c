@@ -15,6 +15,8 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
+#include "vm/page.h"
+
 
 static void syscall_handler (struct intr_frame *);
 int get_arg (void *esp, uint32_t *args, int num_args);
@@ -62,11 +64,11 @@ struct file* fd_to_file(struct thread* t, int fd){
  * Length in bytes are required to insure entire block of intended access is valid.
  * Returns true if user pointer range is valid, false else.  */
 bool ptr_valid(const void* ptr, int len){
-    /*
+#if debugptr
     printf("\n**********************\n");
     printf("Validating pointer:\n");
     printf("Virtual address: %p, Size: %d\n", ptr, len);
-    */
+#endif
     bool isValid = true;
     /* No addresses in range may be above PHYS_BASE.
      * The largest address will always be (ptr + len) */
@@ -76,28 +78,37 @@ bool ptr_valid(const void* ptr, int len){
       }
     else if (!is_user_vaddr(ptr + len)){isValid = false;}
     else {
-        // printf("Segment is below PHYS_BASE\n");
+#if debugptr
+        printf("Segment is below PHYS_BASE\n");
+#endif
         /* Check that every page in range is mapped. */
         struct thread* t = thread_current();
         const void* page_bottom; /* Points to the bottom of next page above current page */
         while (len >= 0){
             /* This page is in range, check if it is mapped. */
             void* phys_page = pagedir_get_page(t->pagedir, ptr);
-            // printf("Physical page of pointer: %p\n", phys_page);
+#if debugptr
+            printf("Physical page of pointer: %p\n", phys_page);
+#endif
             if (phys_page == NULL){
                 /* Page in range unmapped. */
-                isValid = false;
-                break;
+#if debugptr
+              printf("Page in range unmapped.\n");
+#endif
+              isValid = false;
+              break;
             }
             /* Find the bottom of the next page above this one. */
             page_bottom = pg_round_up(ptr) + 1;
             len -= (page_bottom - ptr); /* Page verified. Check if length extends to next page. */
-            // printf("Size: %d\n", len);
+#if debugptr
+            printf("Size: %d\n", len);
+#endif
             ptr = page_bottom;
             
         }
     }
-    /*
+#if debugptr
     printf("Pointer is ");
     if (isValid){
         printf("valid\n");
@@ -106,7 +117,7 @@ bool ptr_valid(const void* ptr, int len){
         printf("invalid\n");
     }
     printf("**********************\n\n");
-    */
+#endif
     return isValid;
 }
 
@@ -361,6 +372,9 @@ syscall_handler (struct intr_frame *f UNUSED)
                     /* One or more pages unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
+#if debug12
+                    print_all_spte();
+#endif
                     exit (-1);
                   }
             }

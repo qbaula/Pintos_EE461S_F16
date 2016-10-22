@@ -48,6 +48,7 @@ frame_get()
           return &frame_table[i];
         }
     }
+  // panic if absolutely full memory
 }
 
 struct frame_table_entry *
@@ -66,6 +67,7 @@ frame_map(struct sup_pte *spte)
   else
     {
       // deallocate frame
+      //printf("Virtual Address failed to map: %p\n", spte->user_va); 
       return NULL;
     }
 }
