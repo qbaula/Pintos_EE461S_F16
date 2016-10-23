@@ -153,77 +153,46 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /*
-  if (user)
-    {
-      printf("this is where it fails.\n");
-      exit(-1);
-    }
-*/
-  struct sup_pte *spte;
-
-  // todo: check if user/kernel
-  if (fault_addr > HEAP_STACK_DIVIDE && fault_addr < PHYS_BASE) /* Grow stack */
-    {
-      //printf("Growing stack!\n");
-      bool success = alloc_blank_spte (fault_addr);
-      if (!success)
-        {
-          PANIC ("Out of kernel memory.\n");
-        }
-    }
-  
-  else 
-    {
-      spte = get_spte (fault_addr);
-#if debug9
-      printf("problem child: %p\n", fault_addr);
-      print_spte(spte);
-      printf("SPT\n");
-      print_all_spte();
+#if debug15
+  printf("Faulting address: %p\n", fault_addr);
 #endif
-      
-      /* To implement virtual memory, delete the rest of the function
-         body, and replace it with code that brings in the page to
-         which fault_addr refers. */
-      if (spte == NULL)
+
+  bool success = false;
+  if (not_present
+      && fault_addr > USER_BOTTOM
+      && fault_addr < PHYS_BASE) 
+    {
+      /* Page fault occurred by read/write in user virtual memory
+       * and the page was not present */
+      struct sup_pte *spte = get_spte(fault_addr);
+      if (spte)
         {
-          exit(-1);
-          printf ("Page fault at %p: %s error %s page in %s context.\n",
-                  fault_addr,
-                  not_present ? "not present" : "rights violation",
-                  write ? "writing" : "reading",
-                  user ? "user" : "kernel");
-          kill (f);
+          success = load_spte(spte);
         }
 
-      else
+      else if (fault_addr > HEAP_STACK_DIVIDE)
         {
-          //printf("Page Fault Occured, Creating new Supp Page\n");
-          struct frame_table_entry *fte = frame_map(spte);
-          if (fte == NULL)
+          /* Grow stack */
+          if (write) 
             {
-              printf ("Out of frames.\n");
-              kill (f);
+              success = alloc_blank_spte (fault_addr);
             }
-
-          if (spte->is_file)
+          else 
             {
-              char *buf = (char *) malloc (spte->read_bytes);
-              file_seek (spte->file, spte->offset);
-              int actual_read = file_read (spte->file, fte->frame_addr, spte->read_bytes);
-              if (actual_read != spte->read_bytes)
-                {
-                  printf ("\nUnable to read all bytes.\n");
-                  kill (f);
-                }
-              memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
-            }
-          else
-            {
-              memset(fte->frame_addr, 0, PGSIZE);
+              exit(-1);
             }
         }
+    }
+
+  if (!success)
+    {
+      exit (-1);
+      printf ("Page fault at %p: %s error %s page in %s context.\n",
+              fault_addr,
+              not_present ? "not present" : "rights violation",
+              write ? "writing" : "reading",
+              user ? "user" : "kernel");
+      kill (f);
     }
 }
 

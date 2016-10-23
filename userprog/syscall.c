@@ -16,6 +16,7 @@
 #include "filesys/file.h"
 
 #include "vm/page.h"
+#include "vm/frame.h"
 
 
 static void syscall_handler (struct intr_frame *);
@@ -26,10 +27,6 @@ int *get_paddr (const void *vaddr);
 struct file* fd_to_file(struct thread* t, int fd);
 bool ptr_valid(const void* ptr, int len);
 bool is_open(struct thread* t, int fd);
-
-/* File system concurrency lock. */
-bool firstCall = true;
-static struct lock file_lock;
 
 /* Checks if a threads's given file descriptor is valid/open.
  * Assumes that this is for files and not STDIN/STDOUT. */
@@ -63,7 +60,7 @@ struct file* fd_to_file(struct thread* t, int fd){
 /* Checks that a user passed pointer is contained in a valid, permissed virtual page.
  * Length in bytes are required to insure entire block of intended access is valid.
  * Returns true if user pointer range is valid, false else.  */
-bool ptr_valid(const void* ptr, int len){
+bool ptr_valid2(const void* ptr, int len){
 #if debugptr
     printf("\n**********************\n");
     printf("Validating pointer:\n");
@@ -95,8 +92,23 @@ bool ptr_valid(const void* ptr, int len){
 #if debugptr
               printf("Page in range unmapped.\n");
 #endif
-              isValid = false;
-              break;
+
+              struct sup_pte *spte = get_spte(ptr);
+
+              if (spte)
+                {
+                  struct frame_table_entry *fte = frame_map(spte);
+                  if (fte)
+                  {
+                    isValid = true;
+                  }
+                if (spte->is_file)
+                  {
+                    file_seek (spte->file, spte->offset);
+                    int actual_read = file_read (spte->file, fte->frame_addr, spte->read_bytes);
+                  }
+                  memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
+                }
             }
             /* Find the bottom of the next page above this one. */
             page_bottom = pg_round_up(ptr) + 1;
@@ -121,10 +133,32 @@ bool ptr_valid(const void* ptr, int len){
     return isValid;
 }
 
+
+bool 
+ptr_valid(const void* ptr, int len)
+{
+  if (ptr + len < PHYS_BASE
+   && ptr > USER_BOTTOM)
+    {
+      const void* page_bottom;
+      while(len >= 0) 
+       {
+         volatile int dummy = * (int*)(ptr);
+         page_bottom = pg_round_up(ptr) + 1;
+         len -= (page_bottom - ptr);
+         ptr = page_bottom;
+       }
+      return true;
+    }
+
+  return false;
+}
+
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&file_lock);
 }
 
 int
@@ -170,11 +204,6 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       exit(-1);
     }
-
-  if (firstCall){
-      lock_init(&file_lock);
-      firstCall = false;
-  }
 
   int sys_no = *((int *)f->esp);
   uint32_t args[3]; /* max args = 3 */
@@ -241,7 +270,9 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_CREATE:                 /* Create a file. */
         {
-//             printf("sys_create\n");
+#if debug12
+          printf("In create\n");
+#endif
              if (get_arg(f->esp, args, 2) > 0){
                 const char* v_file = (const char*) args[0];
                 if (v_file == NULL)
@@ -259,9 +290,11 @@ syscall_handler (struct intr_frame *f UNUSED)
                       }
                 }
                 else {
-                    /* One or more pages unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
+#if debug13
+                    printf("Exits here\n");
+#endif
                     exit(-1);
                 }
             }     
@@ -356,6 +389,8 @@ syscall_handler (struct intr_frame *f UNUSED)
                 /* Validate pointer. */
                 if (ptr_valid(v_buffer, size)){
                     /* Convert to phys addr. */
+                    struct sup_pte *spte = get_spte (v_buffer);
+                    // print_spte (spte);
                     void* p_buffer = (void*) get_paddr(v_buffer);
                     if (p_buffer)
                       {
@@ -369,7 +404,6 @@ syscall_handler (struct intr_frame *f UNUSED)
                 }
                 else
                   {
-                    /* One or more pages unmapped. */
                     f->eip = (void*) f->eax;
                     f->eax = -1;
 #if debug12
@@ -676,9 +710,10 @@ open (const char *file)
 	  //printf("File name wanted to open: %s; Thread name: %s\n", file, t->name);
       //if (strcmp(file, t->name) == 0)
       if(is_ELF(f, (char *) file))  
-		{
+        {
           file_deny_write(f);
         }
+      file_seek(f, 0);
       lock_release(&file_lock);
     }
   
@@ -715,6 +750,7 @@ read (int fd, void *buffer, unsigned size)
      * Fd 0 reads from the keyboard using input_getc(). 
      */
     /* Return value. */
+  printf("Reading file into buffer: %p\n", buffer);
     int bytes_read;
     /* Cannot read from STDOUT. */
     if (fd == 1) {bytes_read = -1;}
@@ -763,13 +799,18 @@ write (int fd, const void *buffer, unsigned size)
 //    printf("fd: %d, buffer: %p, size: %d\n", fd, buffer, size);
     int bytes_written;
     /* Cannot write to STDIN. */
-    if (fd == 0){bytes_written = -1;}
+    if (fd == 0)
+      {
+        bytes_written = -1;
+      }
     /* Handle STDOUT. */
-    else if (fd == 1){
+    else if (fd == 1)
+      {
         putbuf(buffer, size);
         bytes_written = size;
-    }    
-    else {
+      }    
+    else 
+      {
         /* Write to file. */
         struct file* f = fd_to_file(thread_current(), fd);
         if (f == NULL){bytes_written = -1;}
@@ -777,7 +818,7 @@ write (int fd, const void *buffer, unsigned size)
             lock_acquire(&file_lock);
             bytes_written = (int) file_write(f, buffer, size);
             lock_release(&file_lock);
-        }
+      }
     }
 	// printf("Returning Bytes: %d\n", bytes_written);
     return bytes_written;
@@ -801,7 +842,6 @@ seek (int fd, unsigned position)
         lock_acquire(&file_lock);
         file_seek(fd_to_file(t, fd), position);
         lock_release(&file_lock);  
-
     }
 }
 

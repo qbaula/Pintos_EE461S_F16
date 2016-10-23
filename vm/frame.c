@@ -62,12 +62,13 @@ frame_map(struct sup_pte *spte)
           && pagedir_set_page (t->pagedir, spte->user_va, fte->frame_addr, spte->writable));
   if (success)
     {
+      spte->valid = true;
       return fte;
     }
   else
     {
       // deallocate frame
-      //printf("Virtual Address failed to map: %p\n", spte->user_va); 
+      fte->owner = NULL;
       return NULL;
     }
 }
@@ -78,7 +79,11 @@ frame_map(struct sup_pte *spte)
 void 
 frame_free(struct frame_table_entry *frame)
 {
-	
+  pagedir_clear_page(frame->owner->pagedir, frame->spte->user_va);
+  frame->owner = NULL;	
+
+  frame->spte->valid = false;
+  frame->spte = NULL;
 }
 
 /*

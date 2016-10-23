@@ -7,10 +7,7 @@
 #include "filesys/off_t.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
-/*
- * Page implementation for vim.
- */
+#include "userprog/syscall.h"
 
 void free_page (struct sup_pte *ptr);
 
@@ -81,9 +78,9 @@ alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
       return false;
     }
 
-  new_spte->valid = 0;
-  new_spte->accessed = 0;
-  new_spte->dirty = 0;
+  new_spte->valid = false;
+  new_spte->accessed = false;
+  new_spte->dirty = false;
 
   new_spte->is_file = true;
   new_spte->file = file;
@@ -112,10 +109,9 @@ alloc_blank_spte(uint8_t *upage)
 
   new_spte->user_va = pg_round_down(upage);
 
-  new_spte->valid = 0;
   new_spte->writable = true;
-  new_spte->accessed = 0;
-  new_spte->dirty = 0;
+  new_spte->accessed = false;
+  new_spte->dirty = false;
 
   new_spte->is_file = false;
   new_spte->file = NULL;
@@ -133,6 +129,34 @@ alloc_blank_spte(uint8_t *upage)
   memset(fte->frame_addr, 0, PGSIZE);
 
   return true;
+}
+
+bool 
+load_spte (struct sup_pte *spte)
+{
+  bool result = false;
+  struct frame_table_entry *fte = frame_map(spte);
+  if (fte)
+    {
+      result = true;
+    }
+
+  if (spte->is_file)
+    {
+      int actual_read = 0;
+      lock_acquire(&file_lock); 
+      file_seek (spte->file, spte->offset);
+      actual_read = file_read (spte->file, fte->frame_addr, spte->read_bytes);
+      lock_release(&file_lock);
+      if (actual_read != spte->read_bytes)
+        {
+          result = false;
+          // deallocate and unmap frame
+        }
+      memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
+    }
+
+  return result;
 }
 
 bool 

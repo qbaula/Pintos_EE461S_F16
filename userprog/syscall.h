@@ -2,7 +2,10 @@
 #define USERPROG_SYSCALL_H
 
 #include <stdbool.h>
+#include "threads/synch.h"
 #include "userprog/process.h"
+
+struct lock file_lock;
 
 void syscall_init (void);
 
