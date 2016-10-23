@@ -80,3 +80,10 @@ swap_from_disk (struct frame_table_entry *dest_fte, int swap_idx)
   return true;
 }
 
+void
+swap_clear(int clear_idx)
+{
+  lock_acquire (&swap_lock);
+  bitmap_set(swap_table, clear_idx, false);
+  lock_release (&swap_lock);
+}

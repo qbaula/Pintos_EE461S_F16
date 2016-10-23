@@ -6,6 +6,7 @@
 #include "kernel/list.h"
 #include "filesys/off_t.h"
 #include "filesys/file.h"
+#include "threads/thread.h"
 
 #define HEAP_STACK_DIVIDE 0xB0000000
 #define CODE_START 0x8048000
@@ -35,6 +36,7 @@ struct sup_pte
   off_t offset;
   int read_bytes;
   int zero_bytes;
+  bool has_been_loaded;
 
   struct list_elem elem;
 };
@@ -42,6 +44,7 @@ struct sup_pte
 void vm_page_table_init();
 void *vm_get_page();
 void vm_free_page(void *);
+void spt_clear(struct thread *owner);
 
 bool alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
                      uint32_t read_bytes, uint32_t zero_bytes, bool writable);

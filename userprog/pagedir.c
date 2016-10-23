@@ -113,6 +113,8 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
     {
       ASSERT ((*pte & PTE_P) == 0);
       *pte = pte_create_user (kpage, writable);
+      // printf ("Installed virtual PTE: %p\n", upage);
+      // printf ("Installed it to kernel VA: %p\n", kpage);
       return true;
     }
   else
@@ -154,6 +156,7 @@ pagedir_clear_page (uint32_t *pd, void *upage)
   pte = lookup_page (pd, upage, false);
   if (pte != NULL && (*pte & PTE_P) != 0)
     {
+      // printf ("Cleared virtual PTE: %p\n", upage);
       *pte &= ~PTE_P;
       invalidate_pagedir (pd);
     }

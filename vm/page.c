@@ -43,11 +43,11 @@ vm_alloc_spte(int num_spte)
 }
 /* This function must find the corresponding PTE of the the pointer passed in
  * and free the page.
- */
 void 
 vm_free_page(void *ptr){
 	frame_free(ptr);
 }
+ */
 
 /* Function to talk with the frame based on the sup_pte
  */
@@ -91,6 +91,7 @@ alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
   new_spte->read_bytes = read_bytes;
   new_spte->zero_bytes = zero_bytes;
   new_spte->writable = writable;
+  new_spte->has_been_loaded = false;
 
   spte_insert(&thread_current()->spt, new_spte); 
 
@@ -145,7 +146,7 @@ load_spte (struct sup_pte *spte)
       result = true;
     }
 
-  if (spte->is_file)
+  if (spte->is_file && !spte->has_been_loaded)
     {
       int actual_read = 0;
       lock_acquire(&file_lock); 
@@ -158,6 +159,7 @@ load_spte (struct sup_pte *spte)
           // deallocate and unmap frame
         }
       memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
+      spte->has_been_loaded = true;
     }
 
   return result;
@@ -184,6 +186,38 @@ get_spte(uint8_t *fault_addr)
     }
 
   return NULL;
+}
+
+void
+spt_clear(struct thread *owner)
+{
+  /*
+   * Clear SPT by freeing all swap table entries first.
+   * Free SPTEs as we go through the SPT list.
+   */
+  struct list_elem *e, *prev = NULL;
+  for (e = list_begin(&owner->spt); e != list_end(&owner->spt);
+       e = list_next(e))
+    {
+      if (prev != NULL)
+        {
+          list_remove(prev);
+          struct sup_pte *prev_spte = list_entry(prev, struct sup_pte, elem);
+          // free (prev_spte);
+        }
+
+      struct sup_pte *spte = list_entry(e, struct sup_pte, elem);
+      if (spte->in_swap)
+        {
+          swap_clear(spte->swap_table_index);
+        }
+      prev = e;
+    }
+  list_remove(prev);
+  struct sup_pte *prev_spte = list_entry(prev, struct sup_pte, elem);
+  // free (prev_spte);
+
+  frame_table_clear(owner);
 }
 
 void

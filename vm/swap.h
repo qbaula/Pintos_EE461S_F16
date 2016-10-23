@@ -21,5 +21,6 @@ void swap_table_init(void);
 
 int swap_to_disk(struct frame_table_entry *fte);
 bool swap_from_disk(struct frame_table_entry *dest_fte, int swap_idx);
+void swap_clear(int clear_idx);
 
 #endif

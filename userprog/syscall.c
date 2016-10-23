@@ -545,6 +545,7 @@ exit (int status)
           lock_release(&file_lock);
         }
     }
+
   free (curr->open_files->files);
   free (curr->open_files->isOpen);
   free (curr->open_files);
