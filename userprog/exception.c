@@ -153,7 +153,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-#if debug15
+#if debugpfault
   printf("Faulting address: %p\n", fault_addr);
 #endif
 

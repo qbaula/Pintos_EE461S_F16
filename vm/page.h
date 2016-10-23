@@ -27,6 +27,7 @@ struct sup_pte
   
   /* true = pte in swap, else pte in frame table */
   bool in_swap;
+  int swap_table_index;
   
   /* files */
   bool is_file;

@@ -97,7 +97,6 @@ main (void)
 
   /* Initialize memory system. */
   palloc_init (user_page_limit);
-  frame_table_init ();
   malloc_init ();
   paging_init ();
 
@@ -128,6 +127,9 @@ main (void)
   locate_block_devices ();
   filesys_init (format_filesys);
 #endif
+
+  frame_table_init ();
+  swap_table_init ();
 
   printf ("Boot complete.\n");
   

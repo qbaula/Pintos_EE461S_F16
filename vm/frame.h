@@ -18,6 +18,7 @@ void frame_table_init(void);
 struct frame_table_entry *frame_get();  // get a free page that is resident in memory
 struct frame_table_entry *frame_map(struct sup_pte *spte);
 void frame_free(struct frame_table_entry *frame);           // deallocates a frame (i.e. no owner)
-void *frame_evict();                    // calls swap to disk function and clears curr
+struct frame_table_entry *frame_evict();                    // calls swap to disk function and clears curr
 
+void frame_print (struct frame_table_entry *fte, int num_bytes);
 #endif

@@ -82,6 +82,8 @@ alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
   new_spte->accessed = false;
   new_spte->dirty = false;
 
+  new_spte->in_swap = false;
+
   new_spte->is_file = true;
   new_spte->file = file;
   new_spte->offset = ofs;
@@ -112,6 +114,8 @@ alloc_blank_spte(uint8_t *upage)
   new_spte->writable = true;
   new_spte->accessed = false;
   new_spte->dirty = false;
+
+  new_spte->in_swap = false;
 
   new_spte->is_file = false;
   new_spte->file = NULL;
@@ -192,6 +196,7 @@ print_spte(struct sup_pte *pte)
   printf("accessed: %d\n", pte->accessed);
   printf("dirty: %d\n", pte->dirty);
   printf("in_swap: %d\n", pte->in_swap);
+  printf("swap_table index: %d\n", pte->swap_table_index);
   printf("is_file: %d\n", pte->is_file);
   printf("file: %p\n", pte->file);
   printf("offset: %d\n", (int)pte->offset);

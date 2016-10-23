@@ -750,7 +750,6 @@ read (int fd, void *buffer, unsigned size)
      * Fd 0 reads from the keyboard using input_getc(). 
      */
     /* Return value. */
-  printf("Reading file into buffer: %p\n", buffer);
     int bytes_read;
     /* Cannot read from STDOUT. */
     if (fd == 1) {bytes_read = -1;}
