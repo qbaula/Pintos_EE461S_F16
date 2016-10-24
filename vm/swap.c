@@ -29,7 +29,7 @@ swap_table_init()
 int
 swap_to_disk (struct frame_table_entry *fte)
 {
-  //printf("Swapping to\n");
+  // printf("Swapping to\n");
   // printf("Acquiring lock from thread %d\n", fte->owner->tid);
   lock_acquire (&swap_lock);
   // printf("Got lock thread %d\n", fte->owner->tid);

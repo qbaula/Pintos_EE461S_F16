@@ -180,7 +180,6 @@ page_fault (struct intr_frame *f)
             }
           else 
             {
-              printf("Noway\n");
               exit(-1);
             }
         }

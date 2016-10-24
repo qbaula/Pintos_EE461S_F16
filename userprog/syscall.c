@@ -192,11 +192,11 @@ get_paddr(const void *vaddr)
         t = thread_current();
         if(ptr_valid(vaddr, 1))
           {
- //           printf("validated pointer\n");
+             // printf("validated pointer\n");
           }
         else
           {
- //           printf("Could not validate pointer\n");
+             // printf("Could not validate pointer\n");
           }
         /* Returns a null if page unmapped */
         ptr = pagedir_get_page(t->pagedir, vaddr); 
@@ -753,40 +753,52 @@ filesize (int fd)
 int
 read (int fd, void *buffer, unsigned size) 
 {
-    /*
-     * Reads size bytes from the file open as fd into buffer.
-     * Returns the number of bytes actually read (0 at end of file),
-     * or -1 if the file could not be read (due to a condition other than end of file).
-     *
-     * Fd 0 reads from the keyboard using input_getc(). 
-     */
-    /* Return value. */
-    int bytes_read;
-    /* Cannot read from STDOUT. */
-    if (fd == 1) {bytes_read = -1;}
-    /* Handle STDIN. */
-    else if (fd == 0){
-        /* Read in 'size' number of characters form the console. */
-        char* buf = (char*) buffer;
-        unsigned i;
-        for (i = 0; i < size; i++){
-            buf[i] = input_getc();
-        }
-        /* Null termination. */
-        buf[size] = 0;
-        bytes_read = size;
+  /*
+   * Reads size bytes from the file open as fd into buffer.
+   * Returns the number of bytes actually read (0 at end of file),
+   * or -1 if the file could not be read (due to a condition other than end of file).
+   *
+   * Fd 0 reads from the keyboard using input_getc(). 
+   */
+  /* Return value. */
+  int bytes_read;
+  /* Cannot read from STDOUT. */
+  if (fd == 1) 
+    {
+      bytes_read = -1;
     }
-    else{
-        /* Read from file. */
-        struct file* f = fd_to_file(thread_current(), fd);
-        if (f == NULL){bytes_read = -1;}
-        else {
-            lock_acquire(&file_lock);
-            bytes_read = (int) file_read(f, buffer, size);
-            lock_release(&file_lock);
+
+  /* Handle STDIN. */
+  else if (fd == 0)
+    {
+      /* Read in 'size' number of characters form the console. */
+      char* buf = (char*) buffer;
+      unsigned i;
+      for (i = 0; i < size; i++)
+        {
+          buf[i] = input_getc();
+        }
+      /* Null termination. */
+      buf[size] = 0;
+      bytes_read = size;
+   }
+
+  else
+    {
+      /* Read from file. */
+      struct file* f = fd_to_file(thread_current(), fd);
+      if (f == NULL)
+        {
+          bytes_read = -1;
+        }
+      else
+        {
+          lock_acquire(&file_lock);
+          bytes_read = (int) file_read(f, buffer, size);
+          lock_release(&file_lock);
         }
     }
-    return bytes_read;
+  return bytes_read;
 }
 
 int

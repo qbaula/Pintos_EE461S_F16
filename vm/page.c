@@ -15,7 +15,6 @@ void
 vm_page_table_init(struct list *spt)
 {
   list_init(spt);  
-//  printf("page table init!!!\n");
 }
 
 /* Allocates a page in the page table by first checking to see if room avail
@@ -155,7 +154,7 @@ load_spte (struct sup_pte *spte)
   if (spte->is_file && !spte->has_been_loaded)
     {
       int actual_read = 0;
-      lock_acquire(&file_lock); 
+      lock_acquire(&file_lock);
       file_seek (spte->file, spte->offset);
       actual_read = file_read (spte->file, fte->frame_addr, spte->read_bytes);
       lock_release(&file_lock);
@@ -203,7 +202,10 @@ spt_clear(struct thread *owner)
    * Free SPTEs as we go through the SPT list.
    * Free all frames that are owned by current thread.
    */
-
+  if (list_empty (&owner->spt) )
+      {
+        return;
+      }
   struct list_elem *e, *prev = NULL;
   for (e = list_begin(&owner->spt); e != list_end(&owner->spt);
        e = list_next(e))
@@ -222,6 +224,7 @@ spt_clear(struct thread *owner)
         }
       else if (spte->in_swap)
         {
+          //printf("Clearing Swap\n");
           swap_clear(spte->swap_table_index);
         }
 

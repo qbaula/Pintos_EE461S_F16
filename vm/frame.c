@@ -68,7 +68,7 @@ frame_map(struct sup_pte *spte)
   struct thread *t = thread_current();
 
   // printf("Acquiring lock for thread %d\n", t->tid);
-  lock_acquire (&frame_lock);
+      lock_acquire (&frame_lock);
   // printf("Acquired lock for thread %d\n", t->tid);
   struct frame_table_entry *fte = frame_get();
   lock_release(&frame_lock);
@@ -103,6 +103,7 @@ frame_map(struct sup_pte *spte)
 void 
 frame_table_clear(struct thread *owner)
 {
+  
   lock_acquire (&frame_lock);
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
@@ -118,13 +119,13 @@ frame_table_clear(struct thread *owner)
 void
 frame_table_destroy()
 {
+  //lock_release(&frame_lock);
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
       palloc_free_page (frame_table[i].frame_addr);
     }
-  
-  printf("I got to destroy\n");
+  //lock_release(&frame_lock);
 }
 
 /*
