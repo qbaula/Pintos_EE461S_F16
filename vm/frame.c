@@ -163,7 +163,7 @@ frame_swap(struct frame_table_entry *fte)
   fte->owner = thread_current();
 	//palloc_free_page(fte->frame_addr);
 	//fte->frame_addr = palloc_get_page(PAL_USER | PAL_ZERO);
-	memset(fte->frame_addr, 0, PGSIZE);
+	//memset(fte->frame_addr, 0, PGSIZE);
 }
 
 /*

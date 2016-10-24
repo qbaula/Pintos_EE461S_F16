@@ -48,7 +48,9 @@ swap_to_disk (struct frame_table_entry *fte)
     {
       block_write(swap_block_device, sector, src);
       src += BLOCK_SECTOR_SIZE;
-    }
+		}
+
+	memset(fte->frame_addr, 0, PGSIZE);
 
   lock_release (&swap_lock);
   // printf("Released lock thread %d\n", fte->owner->tid);
