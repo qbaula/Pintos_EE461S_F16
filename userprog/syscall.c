@@ -18,136 +18,120 @@
 #include "vm/page.h"
 #include "vm/frame.h"
 
+#define PTR_READ 0
+#define PTR_WRITE 1
 
 static void syscall_handler (struct intr_frame *);
 int get_arg (void *esp, uint32_t *args, int num_args);
-int *get_paddr (const void *vaddr);
 
 /* File system private functions. */
 struct file* fd_to_file(struct thread* t, int fd);
-bool ptr_valid(const void* ptr, int len);
+bool ptr_valid(const void* ptr, int len, bool is_write);
 bool is_open(struct thread* t, int fd);
 
 /* Checks if a threads's given file descriptor is valid/open.
  * Assumes that this is for files and not STDIN/STDOUT. */
-bool is_open(struct thread* t, int fd){
-    /* Return value. */
-    bool isOpen;
-    /* Cannot be STDIN/STDOUT. */
-    if (fd == 0 || fd == 1){isOpen = false;}
-    else {
-        /* Range check. */
-        if (fd >= t->open_files->size || fd < 0){isOpen = false;}
-        else {
-            /* Range valid, check fd. */
-            isOpen = t->open_files->isOpen[fd];
+bool is_open(struct thread* t, int fd)
+{
+  bool isOpen;
+
+  /* Cannot be STDIN/STDOUT. */
+  if (fd == 0 || fd == 1)
+    {
+      isOpen = false;
+    }
+
+  else 
+    {
+      /* Range check. */
+      if (fd >= t->open_files->size || fd < 0)
+        {
+          isOpen = false;
+        }
+
+      /* Range valid, check fd. */
+      else 
+        {
+          isOpen = t->open_files->isOpen[fd];
         }
     }
-   return isOpen; 
+
+ return isOpen; 
 }
 
 /* File system common function converting a file descriptor (fd) to a file pointer.
  * Returns a NULL if fd is STDIN, STDIN, or a not open file. */
 struct file* fd_to_file(struct thread* t, int fd){
-    /* Return value. */
-    struct file* f;    
-    /* Check validity of fd. */
-    if (!is_open(t, fd)){f = NULL;}
-    else {f = t->open_files->files[fd];}
-    return f;
+  struct file* f;    
+
+  /* Check validity of fd. */
+  if (!is_open(t, fd))
+    {
+      f = NULL;
+    }
+  else 
+    {
+      f = t->open_files->files[fd];
+    }
+
+  return f;
 }
-
-/* Checks that a user passed pointer is contained in a valid, permissed virtual page.
- * Length in bytes are required to insure entire block of intended access is valid.
- * Returns true if user pointer range is valid, false else.  */
-bool ptr_valid2(const void* ptr, int len){
-#if debugptr
-    printf("\n**********************\n");
-    printf("Validating pointer:\n");
-    printf("Virtual address: %p, Size: %d\n", ptr, len);
-#endif
-    bool isValid = true;
-    /* No addresses in range may be above PHYS_BASE.
-     * The largest address will always be (ptr + len) */
-    if (ptr == NULL) 
-      {
-        isValid = false;
-      }
-    else if (!is_user_vaddr(ptr + len)){isValid = false;}
-    else {
-#if debugptr
-        printf("Segment is below PHYS_BASE\n");
-#endif
-        /* Check that every page in range is mapped. */
-        struct thread* t = thread_current();
-        const void* page_bottom; /* Points to the bottom of next page above current page */
-        while (len >= 0){
-            /* This page is in range, check if it is mapped. */
-            void* phys_page = pagedir_get_page(t->pagedir, ptr);
-#if debugptr
-            printf("Physical page of pointer: %p\n", phys_page);
-#endif
-            if (phys_page == NULL){
-                /* Page in range unmapped. */
-#if debugptr
-              printf("Page in range unmapped.\n");
-#endif
-
-              struct sup_pte *spte = get_spte(ptr);
-
-              if (spte)
-                {
-                  struct frame_table_entry *fte = frame_map(spte);
-                  if (fte)
-                  {
-                    isValid = true;
-                  }
-                if (spte->is_file)
-                  {
-                    file_seek (spte->file, spte->offset);
-                    int actual_read = file_read (spte->file, fte->frame_addr, spte->read_bytes);
-                  }
-                  memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
-                }
-            }
-            /* Find the bottom of the next page above this one. */
-            page_bottom = pg_round_up(ptr) + 1;
-            len -= (page_bottom - ptr); /* Page verified. Check if length extends to next page. */
-#if debugptr
-            printf("Size: %d\n", len);
-#endif
-            ptr = page_bottom;
-            
-        }
-    }
-#if debugptr
-    printf("Pointer is ");
-    if (isValid){
-        printf("valid\n");
-    }
-    else {
-        printf("invalid\n");
-    }
-    printf("**********************\n\n");
-#endif
-    return isValid;
-}
-
 
 bool 
-ptr_valid(const void* ptr, int len)
+ptr_valid(const void* ptr, int len, bool is_write)
 {
   if (ptr + len < PHYS_BASE
    && ptr > USER_BOTTOM)
     {
+      /* 
+       * If operation is a read, then perform dummy reads on each page
+       * that starts from (ptr) to (ptr+len). This will cause a page fault exception
+       * and the page fault handler can take care of proper allocation.
+       */
+
+      /* 
+       * If operation is a write, check first if SPTE is allocated and load 
+       * the frames in. If no SPTE is found, check to see if the entire
+       * memory locations from (ptr) to (ptr+len) is within the stack.
+       * If it is, grow the stack accordingly.
+       */
       const void* page_bottom;
-      while(len >= 0) 
+      while (len >= 0) 
        {
-         volatile int dummy = * (int*)(ptr);
+         if (!is_write)
+           {
+             volatile int dummy = * (int*)(ptr);
+           }
+
+         else 
+           {
+             struct sup_pte *spte = get_spte(ptr);
+             if (spte)
+               {
+                 if (!spte->writable)
+                   {
+                     exit(-1);
+                   }
+
+                 load_spte(spte);
+               }
+
+             else if (ptr > HEAP_STACK_DIVIDE)
+               {
+                 alloc_blank_spte (ptr);
+               }
+
+             else
+               {
+                 exit (-1);
+               }
+           }
+
          page_bottom = pg_round_up(ptr) + 1;
          len -= (page_bottom - ptr);
          ptr = page_bottom;
        }
+
       return true;
     }
 
@@ -164,7 +148,7 @@ syscall_init (void)
 int
 get_arg (void *esp, uint32_t *args, int num_args)
 {
-  if(!ptr_valid(esp, num_args)){return -1;}
+  if(!ptr_valid(esp, num_args, PTR_READ)){return -1;}
   uint32_t *sp = (uint32_t *) esp;
   int i;
   for (i = 0; i < num_args; i++) 
@@ -182,33 +166,11 @@ get_arg (void *esp, uint32_t *args, int num_args)
   return 1;
 }
 
-int *
-get_paddr(const void *vaddr)
-{
-    void *ptr = NULL;
-    struct thread *t;
-    if(is_user_vaddr(vaddr) && vaddr != NULL)
-      {
-        t = thread_current();
-        if(ptr_valid(vaddr, 1))
-          {
-             // printf("validated pointer\n");
-          }
-        else
-          {
-             // printf("Could not validate pointer\n");
-          }
-        /* Returns a null if page unmapped */
-        ptr = pagedir_get_page(t->pagedir, vaddr); 
-      } 
-    return ptr;
-}
-
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   /* Validate stack pointer. */
-  if(!ptr_valid(f->esp, 0))
+  if(!ptr_valid(f->esp, 0, PTR_READ))
     {
       exit(-1);
     }
@@ -220,14 +182,12 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       case SYS_HALT:                   /* Halt the operating system. */
         {
-//            printf("sys_halt\n");
           halt();
           break;
         }
 
       case SYS_EXIT:                   /* Terminate this process. */
         {
-//            printf("sys_exit\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
               exit (args[0]);
@@ -242,20 +202,10 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_EXEC:                   /* Start another process. */
         {
-//            printf("sys_exec\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
-              const char *cmd = (const char *) get_paddr ((const void *) args[0]);
-              if (cmd)
-                {
-//                  printf("Calling Exec\n");
-                  f->eax = exec(cmd);
-                }
-              else
-                {
-//                  printf("Failed to Call Exec %p, %p\n", cmd, (const void *) args[0]);
-                  f->eax = -1;
-                }
+              const char *cmd = (const char *) (args[0]);
+              f->eax = exec(cmd);
             }
           else
             {
@@ -266,7 +216,6 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_WAIT:                   /* Wait for a child process to die. */
         {
-//            printf("sys_wait\n");
           if (get_arg(f->esp, args, 1) > 0)
             {
               f->eax = wait(args[0]);
@@ -280,203 +229,164 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_CREATE:                 /* Create a file. */
         {
-#if debug12
-          printf("In create\n");
-#endif
-             if (get_arg(f->esp, args, 2) > 0){
-                const char* v_file = (const char*) args[0];
-                if (v_file == NULL)
-                  {
-                    exit (-1);
-                  }
-                unsigned size = (unsigned) args[1];
-                /* Validate pointer. */
-                if (ptr_valid(v_file, size)){
-                    /* Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file);   
-                    if (p_file)
-                      {
-                        f->eax = create(p_file, size);                 
-                      }
-                }
-                else {
-                    f->eip = (void*) f->eax;
-                    f->eax = -1;
-#if debug13
-                    printf("Exits here\n");
-#endif
-                    exit(-1);
-                }
+          if (get_arg(f->esp, args, 2) > 0)
+           {
+             unsigned size = (unsigned) args[1];
+             const char* v_file = (const char*) args[0];
+             if (v_file == NULL)
+               {
+                 exit (-1);
+               }
+          
+             if (ptr_valid(v_file, size, PTR_READ))
+               {
+                 f->eax = create(v_file, size);                 
+               }
+             else 
+               {
+                 f->eip = (void*) f->eax;
+                 f->eax = -1;
+                 exit(-1);
+               }
             }     
-            else {
-                /* Invalid Args. */
-                f->eax = -1;
+          else 
+            {
+              f->eax = -1;
             }
           break;
         }
         
       case SYS_REMOVE:                 /* Delete a file. */
         {
-//            printf("sys_remove\n");
-            if (get_arg(f->esp, args, 1) > 0){
-                /* Args good. */
-                const char* v_file = (const char*) args[0];
-                /* Validate pointer. */
-                if (ptr_valid(v_file, 0)){
-                    /*Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file); // check if p_file is valid
-                    f->eax = remove(p_file);
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              const char* v_file = (const char*) args[0];
+              if (ptr_valid(v_file, 0, PTR_READ))
+                {
+                  f->eax = remove(v_file);
                 }
-                else {
-                    /* Page unmapped. */
-                    f->eip = (void*) f->eax;
-                    f->eax = -1;
+              else 
+                {
+                  f->eip = (void*) f->eax;
+                  f->eax = -1;
                 }
             }
-            else {
-                /* Invalid Arg. */
-                f->eax = -1;
+
+          else  
+            {
+              f->eax = -1;
             }
           break;
         }
 
       case SYS_OPEN:                   /* Open a file. */
         {
-//            printf("sys_open\n");
-            if (get_arg(f->esp, args, 1) > 0){
-                /* Args good. */
-                const char* v_file = (const char*) args[0];
-                if (v_file == NULL)
-                  {
-                    exit (-1);
-                  }
-                /* Validiate pointer. */
-                if (ptr_valid(v_file, 0)){
-                    /* Convert to paddr. */
-                    const char* p_file = (const char*) get_paddr(v_file);
-                    if (p_file)
-                      {
-                        f->eax = open(p_file);
-                      }
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              const char* v_file = (const char*) args[0];
+              if (v_file == NULL)
+                {
+                  exit (-1);
                 }
-                else {
-                    /* Page unmapped. */
-                    f->eip = (void*) f->eax;
-                    f->eax = -1;
-                    exit(-1);
+              if (ptr_valid(v_file, 0, PTR_READ))
+                {
+                  f->eax = open(v_file);
+                }
+              else 
+                {
+                  f->eip = (void*) f->eax;
+                  f->eax = -1;
+                  exit(-1);
                 }
             }
-            else {
-                /* Invalid Arg. */
-                f->eax = -1;
+          else 
+            {
+              f->eax = -1;
             }
           break;
         }
 
       case SYS_FILESIZE:               /* Obtain a file's size. */
         {
-//            printf("sys_filesize\n");
-            if (get_arg(f->esp, args, 1) > 0){
-                /* Args good. */
-                int fd = (int) args[0];
-                f->eax = filesize(fd);
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              int fd = (int) args[0];
+              f->eax = filesize(fd);
             }
-            else {
-                /* Invalid Arg. */
-                f->eax = -1;
+          else 
+            {
+              f->eax = -1;
             }
           break;
         }
 
       case SYS_READ:                   /* Read from a file. */
         {
-            // printf("sys_read\n");
-            if (get_arg(f->esp, args, 3) > 0){
-                /* Args good. */
-                int fd = (int) args[0];
-                void* v_buffer = (void*) args[1];
-                unsigned size = (unsigned) args[2];
-                /* Validate pointer. */
-                if (ptr_valid(v_buffer, size)){
-                    /* Convert to phys addr. */
-										struct thread *t = thread_current(); 
-										if(!pagedir_is_writable(t->pagedir, v_buffer))
+          if (get_arg(f->esp, args, 3) > 0)
+            {
+              int fd = (int) args[0];
+              void* v_buffer = (void*) args[1];
+              unsigned size = (unsigned) args[2];
+              if (ptr_valid(v_buffer, size, PTR_WRITE))
+                {
+								  struct thread *t = thread_current(); 
+									if(!pagedir_is_writable(t->pagedir, v_buffer))
 										{
 											f->eax = -1;
 											exit(-1);
 										} 
 										
-										// print_spte (spte);
-                    void* p_buffer = (void*) get_paddr(v_buffer);
-                    if (p_buffer)
-                      {
-                        f->eax = read(fd, p_buffer, size);
-                      }
-                    else
-                      {
-                        f->eip = (void*) f->eax;
-                        f->eax = -1;
-                      }
+                  f->eax = read(fd, v_buffer, size);
                 }
-                else
-                  {
-                    f->eip = (void*) f->eax;
-                    f->eax = -1;
-#if debug12
-                    print_all_spte();
-#endif
-                    exit (-1);
-                  }
+              else
+                {
+                  f->eip = (void*) f->eax;
+                  f->eax = -1;
+                  exit (-1);
+                }
             }
-            else {
-                /* Args Invalid. */
-                f->eax = -1;
+          else 
+            {
+              f->eax = -1;
             }
           break;
         }
 
       case SYS_WRITE:                  /* Write to a file. */
         { 
-            if (get_arg(f->esp, args, 3) > 0){
-                /* Args good. */
-                int fd = (int) args[0];
-                const void* v_buffer = (void*) args[1];
-                unsigned size = (unsigned) args[2];
-                /* Validate pointer. */
-                if (ptr_valid(v_buffer, size)){
-                    /* Convert to phys addr. */
-                    const void* p_buffer = (const void*) get_paddr(v_buffer);
-                    if (p_buffer)
-                      {
-                        f->eax = write(fd, p_buffer, size);
-                      }
-                    else
-                      {
-                        f->eip = (void*) f->eax;
-                        f->eax = -1;
-                      }
+          if (get_arg(f->esp, args, 3) > 0)
+            {
+              int fd = (int) args[0];
+              const void* v_buffer = (void*) args[1];
+              unsigned size = (unsigned) args[2];
+              if (ptr_valid(v_buffer, size, PTR_READ))
+                {
+                  f->eax = write(fd, v_buffer, size);
                 }
-                else {
-                    /* One or more pages unmapped. */
-                    f->eip = (void*) f->eax;
-                    f->eax = -1;
-                    exit(-1);
+              else 
+                {
+                  f->eip = (void*) f->eax;
+                  f->eax = -1;
+                  exit(-1);
                 }
+            }
+          else 
+            {
+                f->eax = -1;
             }
           break;
         }
 
       case SYS_SEEK:                   /* Change position in a file. */
         {
-//            printf("sys_seek\n");
-            if (get_arg(f->esp, args, 2) > 0){
-                /* Args good. */
-                int fd = (int) args[0];
-                unsigned pos = (unsigned) args[1];
-                seek(fd, pos);
+          if (get_arg(f->esp, args, 2) > 0)
+            {
+              int fd = (int) args[0];
+              unsigned pos = (unsigned) args[1];
+              seek(fd, pos);
             }
-            else {
-                /* Args invalid. */
+          else 
+            {
                 f->eax = -1;
             }
           break;
@@ -484,29 +394,27 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       case SYS_TELL:                   /* Report current position in a file. */
         {
-//            printf("sys_tell\n");
-            if (get_arg(f->esp, args, 1) > 0){
-                /* Arg good. */
-                int fd = (int) args[0];
-                f->eax = tell(fd);
+          if (get_arg(f->esp, args, 1) > 0)
+            {
+              int fd = (int) args[0];
+              f->eax = tell(fd);
             }
-            else {
-                /* Args invalid. */
-                f->eax = -1;
+          else 
+            {
+              f->eax = -1;
             }
           break;
         }
 
       case SYS_CLOSE:                  /* Close a file. */
         {
-//            printf("sys_close\n");
-            if (get_arg(f->esp, args, 1) > 0){
-                /* Arg good. */
-                int fd = (int) args[0];
-                close(fd);
+          if (get_arg(f->esp, args, 2) > 0)
+            {
+              int fd = (int) args[0];
+              close(fd);
             }
-            else {
-                /* Arg inavlid. */
+          else 
+            {
                 f->eax = -1;
             }
           break;
@@ -514,7 +422,6 @@ syscall_handler (struct intr_frame *f UNUSED)
       
       default:
         {
-//            printf("sys_default\n");
           f->eax = -1;
           thread_exit();
         }
@@ -529,7 +436,7 @@ halt (void)
      * Terminates Pintos by calling shutdown_power_off() (declared in "threads/init.h").
      * This should be seldom used, because you lose some information about possible deadlock situations, etc. 
      */
-    shutdown_power_off();
+  shutdown_power_off();
 }
 
 void
@@ -572,12 +479,12 @@ exit (int status)
 pid_t
 exec (const char *cmd_line) 
 {
-    /*
-     * Runs the executable whose name is given in cmd_line, passing any given arguments, and returns the new process's program id (pid).
-     * Must return pid -1, which otherwise should not be a valid pid, if the program cannot load or run for any reason.
-     * Thus, the parent process cannot return from the exec until it knows whether the child process successfully loaded its executable.
-     * You must use appropriate synchronization to ensure this. 
-     */
+  /*
+   * Runs the executable whose name is given in cmd_line, passing any given arguments, and returns the new process's ogram id (pid).
+   * Must return pid -1, which otherwise should not be a valid pid, if the program cannot load or run for any reason.
+   * Thus, the parent process cannot return from the exec until it knows whether the child process successfully loaded its executable.
+   * You must use appropriate synchronization to ensure this. 
+   */
 
   /* Check load is performed in process_execute() */
   pid_t pid = process_execute (cmd_line);
@@ -587,38 +494,38 @@ exec (const char *cmd_line)
 int
 wait (pid_t pid) 
 {
-    /*
-     * Waits for a child process pid and retrieves the child's exit status.
-     *
-     * If pid is still alive, waits until it terminates.
-     * Then, returns the status that pid passed to exit.
-     * If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception), wait(pid) must return -1.
-     * It is perfectly legal for a parent process to wait for child processes that have already terminated by the time the parent calls wait,
-     * but the kernel must still allow the parent to retrieve its child's exit status, or learn that the child was terminated by the kernel.
-     *
-     * wait must fail and return -1 immediately if any of the following conditions is true:
-     *       pid does not refer to a direct child of the calling process.
-     *       pid is a direct child of the calling process if and only if the calling process received pid as a return value from a successful call to exec.
-     *
-     * Note that children are not inherited: if A spawns child B and B spawns child process C, then A cannot wait for C, even if B is dead.
-     * A call to wait(C) by process A must fail.
-     * Similarly, orphaned processes are not assigned to a new parent if their parent process exits before they do.
-     *
-     * The process that calls wait has already called wait on pid.
-     * That is, a process may wait for any given child at most once. 
-     *
-     * Processes may spawn any number of children, wait for them in any order,
-     * and may even exit without having waited for some or all of their children.
-     * Your design should consider all the ways in which waits can occur.
-     * All of a process's resources, including its struct thread, must be freed whether its parent ever waits for it or not,
-     * and regardless of whether the child exits before or after its parent.
-     *
-     * You must ensure that Pintos does not terminate until the initial process exits.
-     * The supplied Pintos code tries to do this by calling process_wait() (in "userprog/process.c") from main() (in "threads/init.c").
-     * We suggest that you implement process_wait() according to the comment at the top of the function and then implement the wait system call in terms of process_wait().
-     *
-     * Implementing this system call requires considerably more work than any of the rest.
-     */
+  /*
+   * Waits for a child process pid and retrieves the child's exit status.
+   *
+   * If pid is still alive, waits until it terminates.
+   * Then, returns the status that pid passed to exit.
+   * If pid did not call exit(), but was terminated by the kernel (e.g. killed due to an exception), wait(pid) must turn -1.
+   * It is perfectly legal for a parent process to wait for child processes that have already terminated by the time e parent calls wai
+     * but the rnel must still allow the parent to retrieve its child's exit status, or learn that the child was terminated by t kernel.
+    
+   * wait must fail and return -1 immediately if any of the following conditions is true:
+   *       pid does not refer to a direct child of the calling process.
+   *       pid is a direct child of the calling process if and only if the calling process received pid as a return val from a successful call to exe
+    
+   * Note that children are not inherited: if A spawns child B and B spawns child process C, then A cannot wait for C, eveif B is dead.
+   * A call to wait(C) by process A must fail.
+   * Similarly, orphaned processes are not assigned to a new parent if their parent process exits before they do.
+   *
+   * The process that calls wait has already called wait on pid.
+   * That is, a process may wait for any given child at most once. 
+   *
+   * Processes may spawn any number of children, wait for them in any order,
+   * and may even exit without having waited for some or all of their children.
+   * Your design should consider all the ways in which waits can occur.
+   * All of a process's resources, including its struct thread, must be freed whether its parent ever waits for it or not,
+   * and regardless of whether the child exits before or after its parent.
+   *
+   * You must ensure that Pintos does not terminate until the initial process exits.
+   * The supplied Pintos code tries to do this by calling process_wait() (in "userprog/process.c") from main() (in "thads/init.c").
+   * We suggest that you implement process_wait() according to the comment at the top of the function and then impment the wait system call in terms of process_wait().
+   *
+   * Implementing this system call requires considerably more work than any of the rest.
+   */
   return process_wait (pid);
 }
 
@@ -631,27 +538,27 @@ create (const char *file, unsigned initial_size)
      *
      * Creating a new file does not open it: opening the new file is a separate operation which would require a open system call. 
      */
-    lock_acquire(&file_lock);
-    bool success = filesys_create(file, initial_size);
-    lock_release(&file_lock);
-    return success;
+  lock_acquire(&file_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&file_lock);
+  return success;
 }
 
 bool
 remove (const char *file) 
 {
-    /*
-     * Deletes the file called file.
-     * Returns true if successful, false otherwise.
-     *
-     * A file may be removed regardless of whether it is open or closed, and removing an open file does not close it.
-     * See Removing an Open File, for details. 
-     */
-    lock_acquire(&file_lock);
-    /* Implementation not complete. */
-    bool success = filesys_remove(file);
-    lock_release(&file_lock);
-    return success;
+  /*
+   * Deletes the file called file.
+   * Returns true if successful, false otherwise.
+   *
+   * A file may be removed regardless of whether it is open or closed, and removing an open file does not close it.
+   * See Removing an Open File, for details. 
+   */
+  lock_acquire(&file_lock);
+  /* Implementation not complete. */
+  bool success = filesys_remove(file);
+  lock_release(&file_lock);
+  return success;
 }
 
 int
@@ -740,20 +647,24 @@ open (const char *file)
 int
 filesize (int fd) 
 {
-    /*
-     * Returns the size, in bytes, of the file open as fd. 
-     */
-    /* Return value. */
-    int size;
-    struct thread* t = thread_current();
-    /* Check for valid fd. */
-    if (!is_open(t , fd)){size = -1;}
-    else {
-        lock_acquire(&file_lock);
-        size = file_length(fd_to_file(t, fd));
-        lock_release(&file_lock);
+  /*
+   * Returns the size, in bytes, of the file open as fd. 
+   */
+  int size;
+  struct thread* t = thread_current();
+
+  /* Check for valid fd. */
+  if (!is_open(t , fd))
+    {
+      size = -1;
     }
-   return size;
+  else
+    {
+      lock_acquire(&file_lock);
+      size = file_length(fd_to_file(t, fd));
+      lock_release(&file_lock);
+    }
+ return size;
 }
 
 int
@@ -810,102 +721,111 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-    /*
-     * Writes size bytes from buffer to the open file fd.
-     * Returns the number of bytes actually written, which may be less than size if some bytes could not be written.
-     *
-     * Writing past end-of-file would normally extend the file, but file growth is not implemented by the basic file system.
-     * The expected behavior is to write as many bytes as possible up to end-of-file and return the actual number written, or 0 if no bytes could be written at all.
-     *
-     * Fd 1 writes to the console.
-     * Your code to write to the console should write all of buffer in one call to putbuf(),
-     * at least as long as size is not bigger than a few hundred bytes.  (It is reasonable to break up larger buffers.)
-     * Otherwise, lines of text output by different processes may end up interleaved on the console,
-     * confusing both human readers and our grading scripts.
-     */
-    /* Return value. */
-//    printf("fd: %d, buffer: %p, size: %d\n", fd, buffer, size);
-    int bytes_written;
-    /* Cannot write to STDIN. */
-    if (fd == 0)
-      {
-        bytes_written = -1;
-      }
-    /* Handle STDOUT. */
-    else if (fd == 1)
-      {
-        putbuf(buffer, size);
-        bytes_written = size;
-      }    
-    else 
-      {
-        /* Write to file. */
-        struct file* f = fd_to_file(thread_current(), fd);
-        if (f == NULL){bytes_written = -1;}
-        else {
-            lock_acquire(&file_lock);
-            bytes_written = (int) file_write(f, buffer, size);
-            lock_release(&file_lock);
-      }
+  /*
+   * Writes size bytes from buffer to the open file fd.
+   * Returns the number of bytes actually written, which may be less than size if some bytes could not be written.
+   *
+   * Writing past end-of-file would normally extend the file, but file growth is not implemented by the basic file system.
+   * The expected behavior is to write as many bytes as possible up to end-of-file and return the actual number written, or 0 if no bytes could be written at all.
+   *
+   * Fd 1 writes to the console.
+   * Your code to write to the console should write all of buffer in one call to putbuf(),
+   * at least as long as size is not bigger than a few hundred bytes.  (It is reasonable to break up larger buffers.)
+   * Otherwise, lines of text output by different processes may end up interleaved on the console,
+   * confusing both human readers and our grading scripts.
+   */
+  int bytes_written;
+
+  /* Cannot write to STDIN. */
+  if (fd == 0)
+    {
+      bytes_written = -1;
     }
-	// printf("Returning Bytes: %d\n", bytes_written);
-    return bytes_written;
+
+  /* Handle STDOUT. */
+  else if (fd == 1)
+    {
+      putbuf(buffer, size);
+      bytes_written = size;
+    }    
+
+  /* Write to file. */
+  else 
+    {
+      struct file* f = fd_to_file(thread_current(), fd);
+      if (f == NULL)
+        {
+          bytes_written = -1;
+        }
+      else 
+        {
+          lock_acquire(&file_lock);
+          bytes_written = (int) file_write(f, buffer, size);
+          lock_release(&file_lock);
+        }
+     }
+  return bytes_written;
 }
 
 void
 seek (int fd, unsigned position) 
 {
-    /*
-     * Changes the next byte to be read or written in open file fd to position,
-     * expressed in bytes from the beginning of the file. (Thus, a position of 0 is the file's start.)
-     *
-     * A seek past the current end of a file is not an error.
-     * A later read obtains 0 bytes, indicating end of file.
-     * A later write extends the file, filling any unwritten gap with zeros.
-     * (However, in Pintos files have a fixed length until project 4 is complete, so writes past end of file will return an error.)
-     * These semantics are implemented in the file system and do not require any special effort in system call implementation.
-     */
-    struct thread* t = thread_current();
-    if (is_open(t, fd)){
-        lock_acquire(&file_lock);
-        file_seek(fd_to_file(t, fd), position);
-        lock_release(&file_lock);  
+  /*
+   * Changes the next byte to be read or written in open file fd to position,
+   * expressed in bytes from the beginning of the file. (Thus, a position of 0 is the file's start.)
+   *
+   * A seek past the current end of a file is not an error.
+   * A later read obtains 0 bytes, indicating end of file.
+   * A later write extends the file, filling any unwritten gap with zeros.
+   * (However, in Pintos files have a fixed length until project 4 is complete, so writes past end of file will return an error.)
+   * These semantics are implemented in the file system and do not require any special effort in system call implementation.
+   */
+  struct thread* t = thread_current();
+  if (is_open(t, fd))
+    {
+      lock_acquire(&file_lock);
+      file_seek(fd_to_file(t, fd), position);
+      lock_release(&file_lock);  
     }
 }
 
 unsigned
 tell (int fd) 
 {
-    /*
-     * Returns the position of the next byte to be read or written in open file fd, expressed in bytes from the beginning of the file. 
-     */
-    /* Return value. */
-    unsigned pos;
-    struct thread* t = thread_current();
-    if (!is_open(t, fd)){pos = -1;}
-    else {
-        lock_acquire(&file_lock);
-        pos = file_tell(fd_to_file(t, fd));
-        lock_release(&file_lock); 
+  /*
+   * Returns the position of the next byte to be read or written in open file fd, expressed in bytes from the beginning of the file. 
+   */
+  unsigned pos;
+  struct thread* t = thread_current();
+  if (!is_open(t, fd))
+    {
+      pos = -1;
     }
-    return pos; 
+  else 
+    {
+      lock_acquire(&file_lock);
+      pos = file_tell(fd_to_file(t, fd));
+      lock_release(&file_lock); 
+    }
+  return pos; 
 }
 
 void
 close (int fd) 
 {
-    /*
-     * Closes file descriptor fd.
-     * Exiting or terminating a process implicitly closes all its open file descriptors, as if by calling this function for each one. 
-     */
-    struct thread* t = thread_current();
-    /* Check fd validity. */
-    if (is_open(t, fd)){
-        /* File is open. */
-        lock_acquire(&file_lock);
-        file_close(fd_to_file(t, fd));
-        lock_release(&file_lock);
-        t->open_files->files[fd] = NULL;
-        t->open_files->isOpen[fd] = false; 
+  /*
+   * Closes file descriptor fd.
+   * Exiting or terminating a process implicitly closes all its open file descriptors, as if by calling this function for each one. 
+   */
+  struct thread* t = thread_current();
+  /* Check fd validity. */
+  if (is_open(t, fd))
+    {
+      lock_acquire(&file_lock);
+      file_close(fd_to_file(t, fd));
+      lock_release(&file_lock);
+      
+      t->open_files->files[fd] = NULL;
+      t->open_files->isOpen[fd] = false; 
     }
 }
