@@ -47,6 +47,7 @@ void push_to_stack(void **stack_ptr, void *src, int size);
 tid_t
 process_execute (const char *file_name) 
 {
+  //printf("Running Process Execute\n");
   char *fn_copy;
   tid_t tid;
   struct thread *curr_thread = thread_current();
@@ -61,7 +62,9 @@ process_execute (const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   /* printf("(process_execute) address of file_name: %p\n", file_name); */
   /* printf("(process_execute) address of fn_copy: %p\n", fn_copy); */
+  //printf("Creating new thread\n");
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  //printf("Thread created!\n");
   if (tid == TID_ERROR)
     {
       palloc_free_page (fn_copy); 
@@ -160,6 +163,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  spt_clear (cur);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -176,7 +180,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  // spt_clear (cur);
 }
 
 /* Sets up the CPU for running user code in the current

@@ -29,11 +29,15 @@ swap_table_init()
 int
 swap_to_disk (struct frame_table_entry *fte)
 {
+  //printf("Swapping to\n");
+  // printf("Acquiring lock from thread %d\n", fte->owner->tid);
   lock_acquire (&swap_lock);
+  // printf("Got lock thread %d\n", fte->owner->tid);
   int free_idx = bitmap_scan_and_flip (swap_table, 0, 1, false);
   if (free_idx == BITMAP_ERROR)
     {
       lock_release (&swap_lock);
+      // printf("Released lock thread %d\n", fte->owner->tid);
       return -1;
     }
   
@@ -47,16 +51,29 @@ swap_to_disk (struct frame_table_entry *fte)
     }
 
   lock_release (&swap_lock);
+  // printf("Released lock thread %d\n", fte->owner->tid);
   return free_idx;
 }
 
 bool
 swap_from_disk (struct frame_table_entry *dest_fte, int swap_idx)
 {
+  //printf("Swapping from %d, Thread owner: %d, Curr Thread%d\n", swap_idx);
+  //print_all_spte();
   if (dest_fte == NULL)
     {
       PANIC("dest_fte in swap_from_disk is NULL\n");
     }
+
+  // print_all_spte();
+#if debugswapfrom
+  printf ("address of swap_lock: %p\n", &swap_lock);
+  printf ("address of swap_table: %p\n", &swap_table);
+  printf ("address of swap_block_device: %p\n", &swap_block_device);
+
+  printf ("swap_table points to: %p\n", swap_table);
+  printf ("swap_block_device poitns to: %p\n", swap_block_device);
+#endif
 
   lock_acquire (&swap_lock);
   bool is_resident = bitmap_test (swap_table, swap_idx);

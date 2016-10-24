@@ -15,6 +15,7 @@ void
 vm_page_table_init(struct list *spt)
 {
   list_init(spt);  
+//  printf("page table init!!!\n");
 }
 
 /* Allocates a page in the page table by first checking to see if room avail
@@ -84,6 +85,8 @@ alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
 
   new_spte->in_swap = false;
 
+  new_spte->is_stack = false;
+  
   new_spte->is_file = true;
   new_spte->file = file;
   new_spte->offset = ofs;
@@ -117,6 +120,7 @@ alloc_blank_spte(uint8_t *upage)
   new_spte->dirty = false;
 
   new_spte->in_swap = false;
+  new_spte->is_stack = true;
 
   new_spte->is_file = false;
   new_spte->file = NULL;
@@ -132,6 +136,8 @@ alloc_blank_spte(uint8_t *upage)
       PANIC ("Can't map to page table\n");
     }
   memset(fte->frame_addr, 0, PGSIZE);
+
+  new_spte->valid = true;
 
   return true;
 }
@@ -156,12 +162,13 @@ load_spte (struct sup_pte *spte)
       if (actual_read != spte->read_bytes)
         {
           result = false;
-          // deallocate and unmap frame
+          // TODO: deallocate and unmap frame
         }
       memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
       spte->has_been_loaded = true;
     }
 
+  spte->valid = result;
   return result;
 }
 
@@ -192,9 +199,11 @@ void
 spt_clear(struct thread *owner)
 {
   /*
-   * Clear SPT by freeing all swap table entries first.
+   * Clear SPT by uninstalling valid pages and freeing all swap table entries.
    * Free SPTEs as we go through the SPT list.
+   * Free all frames that are owned by current thread.
    */
+
   struct list_elem *e, *prev = NULL;
   for (e = list_begin(&owner->spt); e != list_end(&owner->spt);
        e = list_next(e))
@@ -203,19 +212,27 @@ spt_clear(struct thread *owner)
         {
           list_remove(prev);
           struct sup_pte *prev_spte = list_entry(prev, struct sup_pte, elem);
-          // free (prev_spte);
+          free (prev_spte);
         }
 
       struct sup_pte *spte = list_entry(e, struct sup_pte, elem);
-      if (spte->in_swap)
+      if (spte->valid)
+        {
+          pagedir_clear_page(owner->pagedir, spte->user_va);
+        }
+      else if (spte->in_swap)
         {
           swap_clear(spte->swap_table_index);
         }
+
       prev = e;
     }
-  list_remove(prev);
-  struct sup_pte *prev_spte = list_entry(prev, struct sup_pte, elem);
-  // free (prev_spte);
+  if (prev != NULL)
+    {
+      list_remove(prev);
+      struct sup_pte *prev_spte = list_entry(prev, struct sup_pte, elem);
+      free (prev_spte);
+    }
 
   frame_table_clear(owner);
 }
@@ -229,6 +246,7 @@ print_spte(struct sup_pte *pte)
   printf("writable: %d\n", pte->writable);
   printf("accessed: %d\n", pte->accessed);
   printf("dirty: %d\n", pte->dirty);
+  printf("stack: %d\n", pte->is_stack);
   printf("in_swap: %d\n", pte->in_swap);
   printf("swap_table index: %d\n", pte->swap_table_index);
   printf("is_file: %d\n", pte->is_file);

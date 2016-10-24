@@ -55,7 +55,11 @@ frame_get()
     }
   
   // no free frames
-  return frame_evict();
+ 
+  //printf("About to evict\n");
+  struct frame_table_entry *efte = frame_evict();
+  //printf("Evicted\n");
+  return efte;
 }
 
 struct frame_table_entry *
@@ -111,6 +115,18 @@ frame_table_clear(struct thread *owner)
   lock_release(&frame_lock);
 }
 
+void
+frame_table_destroy()
+{
+  int i;
+  for (i = 0; i < palloc_get_num_user_pages(); i++)
+    {
+      palloc_free_page (frame_table[i].frame_addr);
+    }
+  
+  printf("I got to destroy\n");
+}
+
 /*
  * Frees the frame corresponding to the pointer.
 void 
@@ -156,16 +172,32 @@ frame_evict()
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i].owner != owner)
+      if (frame_table[i].owner != owner && !frame_table[i].spte->is_stack)
         {
-          // printf ("Evict frame #: %d", i);
+#if debugevict
+          printf ("Evict frame #: %d\n", i);
+#endif
           frame_swap(&frame_table[i]);
           return &frame_table[i];
         }
     }
 
   // if we got here, every frame is owned by the current thread
-  // printf ("Evict frame #: %d\n", 50);
+#if debugevict
+  printf ("Evict frame #: %d\n", 50);
+#endif
+  for(i = palloc_get_num_user_pages() -1; i > 0; --i)
+    {
+      if(!frame_table[i].spte->is_stack)
+        {
+          //printf("Evicting %d\n", i);
+          //print_spte(frame_table[i].spte);
+          frame_swap(&frame_table[i]);
+          return &frame_table[i];
+        }
+    }
+  // SHOULD NEVER BE CALLED
+  printf("Everything on the frame is a stck\n");
   frame_swap(&frame_table[50]);
   return &frame_table[50];
 }

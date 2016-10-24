@@ -155,6 +155,7 @@ page_fault (struct intr_frame *f)
 
 #if debugpfault
   printf("Faulting address: %p\n", fault_addr);
+  printf("Page fault count: %d\n", page_fault_cnt);
 #endif
 
   bool success = false;
@@ -179,6 +180,7 @@ page_fault (struct intr_frame *f)
             }
           else 
             {
+              printf("Noway\n");
               exit(-1);
             }
         }

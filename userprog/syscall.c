@@ -190,6 +190,14 @@ get_paddr(const void *vaddr)
     if(is_user_vaddr(vaddr) && vaddr != NULL)
       {
         t = thread_current();
+        if(ptr_valid(vaddr, 1))
+          {
+ //           printf("validated pointer\n");
+          }
+        else
+          {
+ //           printf("Could not validate pointer\n");
+          }
         /* Returns a null if page unmapped */
         ptr = pagedir_get_page(t->pagedir, vaddr); 
       } 
@@ -240,10 +248,12 @@ syscall_handler (struct intr_frame *f UNUSED)
               const char *cmd = (const char *) get_paddr ((const void *) args[0]);
               if (cmd)
                 {
+//                  printf("Calling Exec\n");
                   f->eax = exec(cmd);
                 }
               else
                 {
+//                  printf("Failed to Call Exec %p, %p\n", cmd, (const void *) args[0]);
                   f->eax = -1;
                 }
             }

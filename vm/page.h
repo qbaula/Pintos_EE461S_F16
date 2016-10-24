@@ -32,6 +32,7 @@ struct sup_pte
   
   /* files */
   bool is_file;
+  bool is_stack;
   struct file *file;
   off_t offset;
   int read_bytes;
