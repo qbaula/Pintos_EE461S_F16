@@ -399,8 +399,14 @@ syscall_handler (struct intr_frame *f UNUSED)
                 /* Validate pointer. */
                 if (ptr_valid(v_buffer, size)){
                     /* Convert to phys addr. */
-                    struct sup_pte *spte = get_spte (v_buffer);
-                    // print_spte (spte);
+										struct thread *t = thread_current(); 
+										if(!pagedir_is_writable(t->pagedir, v_buffer))
+										{
+											f->eax = -1;
+											exit(-1);
+										} 
+										
+										// print_spte (spte);
                     void* p_buffer = (void*) get_paddr(v_buffer);
                     if (p_buffer)
                       {
