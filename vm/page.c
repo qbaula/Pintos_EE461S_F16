@@ -1,6 +1,6 @@
 #include <inttypes.h>
 #include <stdbool.h>
-#include "kernel/list.h"
+#include <list.h>
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "filesys/file.h"
@@ -17,7 +17,8 @@ vm_page_table_init(struct list *spt)
   list_init(spt);  
 }
 
-/* Allocates a page in the page table by first checking to see if room avail
+/*
+ * Allocates a page in the page table by first checking to see if room avail
  * in the frame. If so, then get the frame # and allocate PTE. Otherwise, 
  * will need to evict a frame and make one available.
  */
@@ -41,15 +42,9 @@ vm_alloc_spte(int num_spte)
 
     }
 }
-/* This function must find the corresponding PTE of the the pointer passed in
- * and free the page.
-void 
-vm_free_page(void *ptr){
-	frame_free(ptr);
-}
- */
 
-/* Function to talk with the frame based on the sup_pte
+/*
+ * Function to talk with the frame based on the sup_pte
  */
 void
 free_page(struct sup_pte *ptr){
@@ -134,6 +129,7 @@ alloc_blank_spte(uint8_t *upage)
     {
       PANIC ("Can't map to page table\n");
     }
+
   memset(fte->frame_addr, 0, PGSIZE);
 
   new_spte->valid = true;
@@ -151,7 +147,12 @@ load_spte (struct sup_pte *spte)
       result = true;
     }
 
-  if (spte->is_file && !spte->has_been_loaded)
+	if (spte->in_swap)
+		{
+			swap_from_disk (fte, spte->swap_table_index);
+			spte->in_swap = false;
+		}
+  else if (spte->is_file && !spte->has_been_loaded)
     {
       int actual_read = 0;
       lock_acquire(&file_lock);
@@ -161,6 +162,7 @@ load_spte (struct sup_pte *spte)
       if (actual_read != spte->read_bytes)
         {
           result = false;
+					printf ("Need to finish TODO 1\n");
           // TODO: deallocate and unmap frame
         }
       memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
@@ -194,18 +196,19 @@ get_spte(uint8_t *fault_addr)
   return NULL;
 }
 
+/*
+ * Clear SPT by uninstalling valid pages and freeing all swap table entries.
+ * Free SPTEs as we go through the SPT list.
+ * Free all frames that are owned by current thread.
+ */
 void
 spt_clear(struct thread *owner)
 {
-  /*
-   * Clear SPT by uninstalling valid pages and freeing all swap table entries.
-   * Free SPTEs as we go through the SPT list.
-   * Free all frames that are owned by current thread.
-   */
   if (list_empty (&owner->spt) )
       {
         return;
       }
+
   struct list_elem *e, *prev = NULL;
   for (e = list_begin(&owner->spt); e != list_end(&owner->spt);
        e = list_next(e))
@@ -218,13 +221,12 @@ spt_clear(struct thread *owner)
         }
 
       struct sup_pte *spte = list_entry(e, struct sup_pte, elem);
-      if (spte->valid)
+      if (pagedir_get_page (owner->pagedir, spte->user_va))
         {
-          pagedir_clear_page(owner->pagedir, spte->user_va);
+					pagedir_clear_page(owner->pagedir, spte->user_va);
         }
       else if (spte->in_swap)
         {
-          //printf("Clearing Swap\n");
           swap_clear(spte->swap_table_index);
         }
 

@@ -1,14 +1,15 @@
 #ifndef VM_FRAME_H
 #define VM_FRAME_H
 
-#include "page.h"
-#include "../lib/kernel/list.h"
+#include <list.h>
+#include "threads/thread.h"
+#include "vm/page.h"
 
 /*
  * Frame implementation for vm
  */
 struct frame_table_entry {
-	struct thread *owner;
+	tid_t owner_tid;
 	struct sup_pte *spte;
 	void *frame_addr;
 };

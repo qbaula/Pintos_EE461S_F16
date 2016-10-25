@@ -20,17 +20,15 @@ frame_table_init ()
 {
   int user_pages = palloc_get_num_user_pages ();
   frame_table = (struct frame_table_entry *)(malloc(sizeof(struct frame_table_entry) * user_pages));
-  // printf("size of frame_table: %d\n", sizeof(struct frame_table_entry) * user_pages);
 
   void *frame_ptr;
   struct frame_table_entry *fte_ptr; 
   int i = 0;
-  // while((frame_ptr = palloc_get_page(PAL_USER)) != NULL)
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
       frame_ptr = palloc_get_page(PAL_USER);
       frame_table[i].frame_addr = frame_ptr; 
-      frame_table[i].owner= NULL;
+      frame_table[i].owner_tid = -1;
       frame_table[i].spte = NULL;
     }
 
@@ -39,6 +37,8 @@ frame_table_init ()
 
 /*
  * Goes through the frame table to find a frame that's available.
+ * Does that by checking if owner == -1. If all frames are owned,
+ * then call frame_evict to get a free frame.
  */
 struct frame_table_entry *
 frame_get()
@@ -46,47 +46,38 @@ frame_get()
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i].owner == NULL)
+      if (frame_table[i].owner_tid == -1)
         {
-          // printf("Gave frame to %d\n", thread_current()->tid);
-          frame_table[i].owner = thread_current();
+					frame_table[i].spte = NULL;
+          frame_table[i].owner_tid = thread_current()->tid;
           return &frame_table[i];
         }
     }
   
-  // no free frames
- 
-  //printf("About to evict\n");
   struct frame_table_entry *efte = frame_evict();
-  //printf("Evicted\n");
+	efte->spte = NULL;
   return efte;
 }
 
+/*
+ * Calls frame_get to get a free frame and maps that frame to 
+ * the given supplemental page table entry.
+ */
 struct frame_table_entry *
 frame_map(struct sup_pte *spte)
 {
   struct thread *t = thread_current();
 
-  // printf("Acquiring lock for thread %d\n", t->tid);
-      lock_acquire (&frame_lock);
-  // printf("Acquired lock for thread %d\n", t->tid);
+	lock_acquire (&frame_lock);
   struct frame_table_entry *fte = frame_get();
   lock_release(&frame_lock);
-  // printf("Released lock for thread %d\n", t->tid);
 
   fte->spte = spte;
 
-  if (spte->in_swap)
-    {
-      swap_from_disk (fte, spte->swap_table_index);
-      spte->in_swap = false;
-      // print_spte (spte);
-      // printf ("Swapping frame from disk: %p\n", fte->frame_addr);
-      // frame_print (fte, 4096);
-    }
 
   bool success = (pagedir_get_page (t->pagedir, spte->user_va) == NULL
           && pagedir_set_page (t->pagedir, spte->user_va, fte->frame_addr, spte->writable));
+
   if (success)
     {
       spte->valid = true;
@@ -95,11 +86,16 @@ frame_map(struct sup_pte *spte)
   else
     {
       // deallocate frame
-      fte->owner = NULL;
+			spte->valid = false;
+      fte->owner_tid = -1;
+			fte->spte = NULL;
       return NULL;
     }
 }
 
+/*
+ * Marks the frames owned by owner to be unowned and free.
+ */
 void 
 frame_table_clear(struct thread *owner)
 {
@@ -108,14 +104,18 @@ frame_table_clear(struct thread *owner)
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i].owner == owner)
+      if (frame_table[i].owner_tid == owner->tid)
         {
-          frame_table[i].owner = NULL;
+          frame_table[i].owner_tid = -1;
+					frame_table[i].spte = NULL;
         }
     }
   lock_release(&frame_lock);
 }
 
+/*
+ * When pintos main() exits, all the pages in the user pool are freed.
+ */
 void
 frame_table_destroy()
 {
@@ -129,83 +129,69 @@ frame_table_destroy()
 }
 
 /*
- * Frees the frame corresponding to the pointer.
-void 
-frame_free(struct frame_table_entry *frame)
-{
-  pagedir_clear_page(frame->owner->pagedir, frame->spte->user_va);
-  frame->owner = NULL;	
-
-  frame->spte->valid = false;
-  frame->spte = NULL;
-}
+ * Removes page table mapping for current frame and then
+ * sends the frame to swap disk.
  */
-
-
-
-void
+struct frame_table_entry *
 frame_swap(struct frame_table_entry *fte)
 {
-  struct sup_pte *owner_spte;
-  owner_spte = fte->spte;
-  pagedir_clear_page(fte->owner->pagedir, owner_spte->user_va);
+  struct sup_pte *evicted_spte = fte->spte;
+	struct thread *evicted_thread = thread_get(fte->owner_tid);
+	if (evicted_thread)
+	  {
+      pagedir_clear_page(evicted_thread->pagedir, evicted_spte->user_va);
+		}
 
-  owner_spte->in_swap = true; 
-  // printf ("Cleared virtual address: %p\n", owner_spte->user_va);
-  owner_spte->swap_table_index = swap_to_disk(fte);
-  if (owner_spte->swap_table_index == -1)
+  evicted_spte->in_swap = true; 
+  evicted_spte->swap_table_index = swap_to_disk(fte);
+  if (evicted_spte->swap_table_index == -1)
     {
-      // no system memory left
       PANIC ("Swap full\n");
     }
 
-  owner_spte->valid = false;
-  fte->owner = thread_current();
-	//palloc_free_page(fte->frame_addr);
-	//fte->frame_addr = palloc_get_page(PAL_USER | PAL_ZERO);
-	//memset(fte->frame_addr, 0, PGSIZE);
+  evicted_spte->valid = false;
+  fte->owner_tid = thread_current()->tid;
+
+	return fte;
 }
 
 /*
  * Evicts a frame and makes it available.
+ * Finds the first frame that is not owned by the current thread.
+ * If all frames are owned by current thread, pick any frame
+ * that isn't the stack.
+ * All else, pick the 51st frame. 
+ *
+ * Once a frame is chosen to be evicted, call frame_swap() to send that
+ * frame to the swap disk (The frame is zeroed out by swap_to_disk()).
  */
 struct frame_table_entry *
 frame_evict()
 {
-  struct thread *owner = thread_current();
+	tid_t current_tid = thread_current()->tid;
 
-  // iterate over frames looking for one that is not owned by current thread
+  // Iterate over frames looking for one that is not owned by current thread
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i].owner != owner && !frame_table[i].spte->is_stack)
+      if (frame_table[i].owner_tid != current_tid && !frame_table[i].spte->is_stack)
         {
-#if debugevict
-          printf ("Evict frame #: %d\n", i);
-#endif
-          frame_swap(&frame_table[i]);
-          return &frame_table[i];
+          return frame_swap(&frame_table[i]);
         }
     }
 
-  // if we got here, every frame is owned by the current thread
-#if debugevict
-  printf ("Evict frame #: %d\n", 50);
-#endif
+  // If we got here, every frame is owned by the current thread
   for(i = palloc_get_num_user_pages() -1; i > 0; --i)
     {
       if(!frame_table[i].spte->is_stack)
         {
-          //printf("Evicting %d\n", i);
-          //print_spte(frame_table[i].spte);
-          frame_swap(&frame_table[i]);
-          return &frame_table[i];
+          return frame_swap(&frame_table[i]);
         }
     }
+
   // SHOULD NEVER BE CALLED
   printf("Everything on the frame is a stck\n");
-  frame_swap(&frame_table[50]);
-  return &frame_table[50];
+  return frame_swap(&frame_table[50]);
 }
   
 void 

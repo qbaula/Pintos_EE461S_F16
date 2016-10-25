@@ -8,6 +8,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -148,7 +149,10 @@ process_wait (tid_t child_tid UNUSED)
       return -1;
     }
   sema_down (&child->exited);
-  status = child->exit_status;
+  
+	//printf("Finished waiting for child\n");
+	
+	status = child->exit_status;
 
   list_remove (&(child->elem));
   child_process_free (child);
@@ -163,7 +167,9 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+	//printf("Clearing SPT\n");
   spt_clear (cur);
+	//printf("Finished clearing SPT\n");
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -311,6 +317,7 @@ load (const char *args, void (**eip) (void), void **esp)
 #if debug6
   printf("executable: %s\n", token);
 #endif
+	lock_acquire (&file_lock);
   file = filesys_open (token);
   if (file == NULL) 
     {
@@ -332,7 +339,6 @@ load (const char *args, void (**eip) (void), void **esp)
       /* printf("error loc 3\n"); */
       goto done; 
     }
-
 
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
@@ -422,6 +428,7 @@ load (const char *args, void (**eip) (void), void **esp)
   success = true;
 
  done: /* We arrive here whether the load is successful or not. */
+	lock_release (&file_lock);
   if (success)
     {
       me->load_status = 1;

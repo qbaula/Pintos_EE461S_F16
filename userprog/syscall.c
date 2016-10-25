@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <stdbool.h>
+#include <string.h>
 #include "devices/shutdown.h"
 #include "userprog/syscall.h"
 #include "userprog/process.h"
@@ -116,7 +117,7 @@ ptr_valid(void *esp, const void* ptr, int len, bool is_write)
                  load_spte(spte);
                }
 
-             else if (ptr > esp - 64)
+             else if (ptr > esp - 32)
                {
                  alloc_blank_spte (ptr);
                }
@@ -238,7 +239,7 @@ syscall_handler (struct intr_frame *f UNUSED)
                  exit (-1);
                }
           
-             if (ptr_valid(f->esp, v_file, size, PTR_READ))
+             if (ptr_valid(f->esp, v_file, strlen(v_file), PTR_READ))
                {
                  f->eax = create(v_file, size);                 
                }
@@ -261,7 +262,11 @@ syscall_handler (struct intr_frame *f UNUSED)
           if (get_arg(f->esp, args, 1) > 0)
             {
               const char* v_file = (const char*) args[0];
-              if (ptr_valid(f->esp, v_file, 0, PTR_READ))
+              if (v_file == NULL)
+                {
+                  exit (-1);
+								}
+              if (ptr_valid(f->esp, v_file, strlen(v_file), PTR_READ))
                 {
                   f->eax = remove(v_file);
                 }
@@ -288,7 +293,7 @@ syscall_handler (struct intr_frame *f UNUSED)
                 {
                   exit (-1);
                 }
-              if (ptr_valid(f->esp, v_file, 0, PTR_READ))
+              if (ptr_valid(f->esp, v_file, strlen(v_file), PTR_READ))
                 {
                   f->eax = open(v_file);
                 }
