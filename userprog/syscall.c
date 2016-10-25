@@ -26,7 +26,7 @@ int get_arg (void *esp, uint32_t *args, int num_args);
 
 /* File system private functions. */
 struct file* fd_to_file(struct thread* t, int fd);
-bool ptr_valid(const void* ptr, int len, bool is_write);
+bool ptr_valid(void *esp, const void* ptr, int len, bool is_write);
 bool is_open(struct thread* t, int fd);
 
 /* Checks if a threads's given file descriptor is valid/open.
@@ -78,7 +78,7 @@ struct file* fd_to_file(struct thread* t, int fd){
 }
 
 bool 
-ptr_valid(const void* ptr, int len, bool is_write)
+ptr_valid(void *esp, const void* ptr, int len, bool is_write)
 {
   if (ptr + len < PHYS_BASE
    && ptr > USER_BOTTOM)
@@ -116,7 +116,7 @@ ptr_valid(const void* ptr, int len, bool is_write)
                  load_spte(spte);
                }
 
-             else if (ptr > HEAP_STACK_DIVIDE)
+             else if (ptr > esp - 64)
                {
                  alloc_blank_spte (ptr);
                }
@@ -148,7 +148,7 @@ syscall_init (void)
 int
 get_arg (void *esp, uint32_t *args, int num_args)
 {
-  if(!ptr_valid(esp, num_args, PTR_READ)){return -1;}
+  if(!ptr_valid(esp, esp, num_args, PTR_READ)){return -1;}
   uint32_t *sp = (uint32_t *) esp;
   int i;
   for (i = 0; i < num_args; i++) 
@@ -170,7 +170,7 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   /* Validate stack pointer. */
-  if(!ptr_valid(f->esp, 0, PTR_READ))
+  if(!ptr_valid(f->esp, f->esp, 0, PTR_READ))
     {
       exit(-1);
     }
@@ -238,7 +238,7 @@ syscall_handler (struct intr_frame *f UNUSED)
                  exit (-1);
                }
           
-             if (ptr_valid(v_file, size, PTR_READ))
+             if (ptr_valid(f->esp, v_file, size, PTR_READ))
                {
                  f->eax = create(v_file, size);                 
                }
@@ -261,7 +261,7 @@ syscall_handler (struct intr_frame *f UNUSED)
           if (get_arg(f->esp, args, 1) > 0)
             {
               const char* v_file = (const char*) args[0];
-              if (ptr_valid(v_file, 0, PTR_READ))
+              if (ptr_valid(f->esp, v_file, 0, PTR_READ))
                 {
                   f->eax = remove(v_file);
                 }
@@ -288,7 +288,7 @@ syscall_handler (struct intr_frame *f UNUSED)
                 {
                   exit (-1);
                 }
-              if (ptr_valid(v_file, 0, PTR_READ))
+              if (ptr_valid(f->esp, v_file, 0, PTR_READ))
                 {
                   f->eax = open(v_file);
                 }
@@ -327,7 +327,7 @@ syscall_handler (struct intr_frame *f UNUSED)
               int fd = (int) args[0];
               void* v_buffer = (void*) args[1];
               unsigned size = (unsigned) args[2];
-              if (ptr_valid(v_buffer, size, PTR_WRITE))
+              if (ptr_valid(f->esp, v_buffer, size, PTR_WRITE))
                 {
 								  struct thread *t = thread_current(); 
 									if(!pagedir_is_writable(t->pagedir, v_buffer))
@@ -359,7 +359,7 @@ syscall_handler (struct intr_frame *f UNUSED)
               int fd = (int) args[0];
               const void* v_buffer = (void*) args[1];
               unsigned size = (unsigned) args[2];
-              if (ptr_valid(v_buffer, size, PTR_READ))
+              if (ptr_valid(f->esp, v_buffer, size, PTR_READ))
                 {
                   f->eax = write(fd, v_buffer, size);
                 }
