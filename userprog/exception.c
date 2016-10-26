@@ -127,10 +127,11 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  bool not_present;  /* True: not-present page, false: writing r/o page. */
-  bool write;        /* True: access was write, false: access was read. */
-  bool user;         /* True: access by user, false: access by kernel. */
-  void *fault_addr;  /* Fault address. */
+  bool not_present;     /* True: not-present page, false: writing r/o page. */
+  bool write;           /* True: access was write, false: access was read. */
+  bool user;            /* True: access by user, false: access by kernel. */
+  void *fault_addr;     /* Fault address. */
+  bool success = false; /* Successfully performed lazy loading or stack growth */
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -158,29 +159,30 @@ page_fault (struct intr_frame *f)
   printf("Page fault count: %d\n", page_fault_cnt);
 #endif
 
-  bool success = false;
+  /* Page fault occurred by read/write in user virtual memory
+   * and the page was not present */
   if (not_present
       && fault_addr > USER_BOTTOM
       && fault_addr < PHYS_BASE) 
     {
-      /* Page fault occurred by read/write in user virtual memory
-       * and the page was not present */
       struct sup_pte *spte = get_spte(fault_addr);
+      /* Lazy loading of code or file */
       if (spte)
         {
           success = load_spte(spte);
         }
 
-      else if (fault_addr > HEAP_STACK_DIVIDE)
+      /* Grow stack */
+      else if ((unsigned int) fault_addr > HEAP_STACK_DIVIDE)
         {
-          /* Grow stack */
           if (write) 
             {
               success = alloc_blank_spte (fault_addr);
             }
+
+          /* Cannot read from unallocated stack space */
           else 
             {
-              //success = true;
 							exit(-1);
             }
         }

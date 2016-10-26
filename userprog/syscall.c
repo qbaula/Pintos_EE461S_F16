@@ -19,15 +19,15 @@
 #include "vm/page.h"
 #include "vm/frame.h"
 
-#define PTR_READ 0
-#define PTR_WRITE 1
+#define PTR_WRITE 0
+#define PTR_READ 1
 
 static void syscall_handler (struct intr_frame *);
 int get_arg (void *esp, uint32_t *args, int num_args);
 
 /* File system private functions. */
 struct file* fd_to_file(struct thread* t, int fd);
-bool ptr_valid(void *esp, const void* ptr, int len, bool is_write);
+bool ptr_valid(void *esp, const void* ptr, int len, bool is_read);
 bool is_open(struct thread* t, int fd);
 
 /* Checks if a threads's given file descriptor is valid/open.
@@ -79,34 +79,37 @@ struct file* fd_to_file(struct thread* t, int fd){
 }
 
 bool 
-ptr_valid(void *esp, const void* ptr, int len, bool is_write)
+ptr_valid(void *esp, const void* ptr, int len, bool is_read)
 {
+/* 
+ * If operation is a read, then perform dummy reads on each page
+ * that starts from (ptr) to (ptr+len). This will cause a page fault exception
+ * and the page fault handler can take care of proper allocation.
+
+ * If operation is a write, check first if SPTE is allocated and load 
+ * the frames in. If no SPTE is found, check to see if the entire
+ * memory locations from (ptr) to (ptr+len) is within the stack.
+ * If it is, grow the stack accordingly.
+ */
   if (ptr + len < PHYS_BASE
    && ptr > USER_BOTTOM)
     {
-      /* 
-       * If operation is a read, then perform dummy reads on each page
-       * that starts from (ptr) to (ptr+len). This will cause a page fault exception
-       * and the page fault handler can take care of proper allocation.
-       */
-
-      /* 
-       * If operation is a write, check first if SPTE is allocated and load 
-       * the frames in. If no SPTE is found, check to see if the entire
-       * memory locations from (ptr) to (ptr+len) is within the stack.
-       * If it is, grow the stack accordingly.
-       */
       const void* page_bottom;
+      /* While loop iterates through all the pages that (ptr) to (ptr+len) occupy. */
       while (len >= 0) 
        {
-         if (!is_write)
+         if (is_read)
            {
+             /* 
+              * This dummy read causes a page fault exception and 
+              * we let the handler take care of lazy loading, if needed.
+              */
              volatile int dummy = * (int*)(ptr);
            }
 
          else 
            {
-             struct sup_pte *spte = get_spte(ptr);
+             struct sup_pte *spte = get_spte((uint8_t *) ptr);
              if (spte)
                {
                  if (!spte->writable)
@@ -117,9 +120,9 @@ ptr_valid(void *esp, const void* ptr, int len, bool is_write)
                  load_spte(spte);
                }
 
-             else if (ptr > esp - 32)
+             else if (ptr >= esp)
                {
-                 alloc_blank_spte (ptr);
+                 alloc_blank_spte ((uint8_t *) ptr);
                }
 
              else

@@ -16,13 +16,12 @@ struct frame_table_entry *frame_table;
 struct lock frame_lock;
 
 void
-frame_table_init ()
+frame_table_init (void)
 {
   int user_pages = palloc_get_num_user_pages ();
   frame_table = (struct frame_table_entry *)(malloc(sizeof(struct frame_table_entry) * user_pages));
 
   void *frame_ptr;
-  struct frame_table_entry *fte_ptr; 
   int i = 0;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
@@ -78,8 +77,8 @@ frame_map(struct sup_pte *spte)
   fte->spte = spte;
 
 
-  bool success = (pagedir_get_page (t->pagedir, spte->user_va) == NULL
-          && pagedir_set_page (t->pagedir, spte->user_va, fte->frame_addr, spte->writable));
+  bool success = (pagedir_get_page (t->pagedir, spte->user_vaddr) == NULL
+          && pagedir_set_page (t->pagedir, spte->user_vaddr, fte->frame_addr, spte->writable));
 
   if (success)
     {
@@ -142,7 +141,7 @@ frame_swap(struct frame_table_entry *fte)
 	struct thread *evicted_thread = thread_get(fte->owner_tid);
 	if (evicted_thread)
 	  {
-      pagedir_clear_page(evicted_thread->pagedir, evicted_spte->user_va);
+      pagedir_clear_page(evicted_thread->pagedir, evicted_spte->user_vaddr);
 		}
 
   evicted_spte->in_swap = true; 
@@ -194,7 +193,6 @@ frame_evict()
     }
 
   // SHOULD NEVER BE CALLED
-  printf("Everything on the frame is a stck\n");
   return frame_swap(&frame_table[50]);
 }
   

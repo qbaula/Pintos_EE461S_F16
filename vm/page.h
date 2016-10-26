@@ -11,14 +11,16 @@
 #define HEAP_STACK_DIVIDE 0xB0000000
 #define CODE_START 0x8048000
 
-/* Page implementation for VM, outside programs will only have access to this
+/*
+ * Page implementation for VM, outside programs will only have access to this
  * head file. They should NOT access frame.h unless running init. Though
  * that may be better off done here.
  */
 
+
 struct sup_pte
 {
-  uint8_t *user_va;
+  uint8_t *user_vaddr;
 
   /* determines state of the pte */
   bool valid;
@@ -30,7 +32,7 @@ struct sup_pte
   bool in_swap;
   int swap_table_index;
   
-  /* files */
+  /* file information */
   bool is_file;
   bool is_stack;
   struct file *file;
@@ -42,16 +44,20 @@ struct sup_pte
   struct list_elem elem;
 };
 
-void vm_page_table_init();
-void *vm_get_page();
-void vm_free_page(void *);
+
+/* Core functions */
+void vm_page_table_init(struct list *spt);
+struct sup_pte * get_spte(uint8_t *fault_addr);
 void spt_clear(struct thread *owner);
 
+/* Allocating new entries in the supplemental page table */
 bool alloc_code_spte(struct file *file, off_t ofs, uint8_t *upage,
                      uint32_t read_bytes, uint32_t zero_bytes, bool writable);
 bool alloc_blank_spte(uint8_t *upage);
-struct sup_pte * get_spte(uint8_t *fault_addr);
+bool load_spte (struct sup_pte *spte);
 
-void print_all_spte();
+/* Debugging functions */
+void print_all_spte(void);
 void print_spte(struct sup_pte *pte);
+
 #endif

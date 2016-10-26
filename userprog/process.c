@@ -448,7 +448,7 @@ load (const char *args, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+// static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -580,33 +580,13 @@ push_to_stack(void **stack_ptr, void *src, int size)
 static bool
 setup_stack (void **esp, const char *args) 
 {
-  uint8_t *kpage;
   /* printf("we setting up stack!\n"); */
 
-  // kpage = frame_get ();
   bool success = alloc_blank_spte(((uint8_t *) PHYS_BASE) - PGSIZE);
   if (success)
     {
-#if debug8
-      printf("Stack SPTE alloc succesful\n");
-#endif
       *esp = PHYS_BASE;
     }
-  /*
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        {
-          *esp = PHYS_BASE;
-        }
-      else
-        {
-          palloc_free_page (kpage);
-          return 0;
-        }
-    }
-    */
 
   char *args_copy, *token, *save_ptr;
   int argc, argv_cap;
@@ -616,21 +596,17 @@ setup_stack (void **esp, const char *args)
   args_copy = (char *)(malloc((strlen(args) + 1) * sizeof(char)));
   strlcpy(args_copy, args, strlen(args)+1);
 
-  /* 
-  printf("(setup_stack) address of args: %p\n", args);
-  printf("(setup_stack) address of args_copy: %p\n", args_copy);
-  printf("(setup_stack) value of args: %s\n", args);
-  printf("(setup_stack) value of args_copy: %s\n", args_copy);
-  */
 
-  /* Initialize argv
+  /*
+   * Initialize argv
    * Array to store starting addresses of arguments placed on stack
    */
   argc = 0; /* counter for number of arguments added to stack */
   argv_cap = 4; /* capacity of argv */
   argv = (char **)(malloc(argv_cap * sizeof(char *)));
 
-  /* Copy arguments on stack 
+  /* 
+   * Copy arguments on stack 
    * and keep track of their starting addresses
    */
   for (token = strtok_r (args_copy, " ", &save_ptr); token != NULL;
@@ -640,8 +616,8 @@ setup_stack (void **esp, const char *args)
 
       argv[argc] = *esp;
       argc++;
-
-      if (argc == argv_cap) /* Resize argv */
+      /* Resize argv */
+      if (argc == argv_cap) 
         {
           argv_cap <<= 1;
           argv = (char **)(realloc(argv, argv_cap * sizeof(char *)));
@@ -653,7 +629,6 @@ setup_stack (void **esp, const char *args)
   int align;
   for (align = (size_t) *esp % 4; align > 0; align--)
     {
-      /* printf("align byte: %d\n", align); */
       push_to_stack(esp, &argv[argc], sizeof(uint8_t));
     }
 
@@ -692,16 +667,17 @@ setup_stack (void **esp, const char *args)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
+/* Verify that there's not already a page at that virtual
+   address, then map our page there. 
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+*/
 
 struct child_process *
 child_process_init (pid_t pid)
