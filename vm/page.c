@@ -133,6 +133,7 @@ alloc_blank_spte(uint8_t *upage)
   memset(fte->frame_addr, 0, PGSIZE);
 
   new_spte->valid = true;
+	fte->in_edit = false;
 
   return true;
 }
@@ -144,8 +145,8 @@ load_spte (struct sup_pte *spte)
   struct frame_table_entry *fte = frame_map(spte);
   if (fte)
     {
-      result = true;
-    }
+			result = true;
+		}
 
 	if (spte->in_swap)
 		{
@@ -168,7 +169,8 @@ load_spte (struct sup_pte *spte)
       memset(fte->frame_addr + spte->read_bytes, 0, spte->zero_bytes);
       spte->has_been_loaded = true;
     }
-
+	if(fte)  
+		fte->in_edit = false;
   spte->valid = result;
   return result;
 }

@@ -30,6 +30,7 @@ frame_table_init ()
       frame_table[i].frame_addr = frame_ptr; 
       frame_table[i].owner_tid = -1;
       frame_table[i].spte = NULL;
+			frame_table[i].in_edit = false;
     }
 
   lock_init (&frame_lock);
@@ -50,12 +51,14 @@ frame_get()
         {
 					frame_table[i].spte = NULL;
           frame_table[i].owner_tid = thread_current()->tid;
+					frame_table[i].in_edit = true;
           return &frame_table[i];
         }
     }
   
   struct frame_table_entry *efte = frame_evict();
 	efte->spte = NULL;
+	efte->in_edit = true;
   return efte;
 }
 
@@ -174,7 +177,8 @@ frame_evict()
   int i;
   for (i = 0; i < palloc_get_num_user_pages(); i++)
     {
-      if (frame_table[i].owner_tid != current_tid && !frame_table[i].spte->is_stack)
+      if (frame_table[i].owner_tid != current_tid 
+					&& !frame_table[i].spte->is_stack && !frame_table[i].in_edit)
         {
           return frame_swap(&frame_table[i]);
         }
@@ -183,7 +187,7 @@ frame_evict()
   // If we got here, every frame is owned by the current thread
   for(i = palloc_get_num_user_pages() -1; i > 0; --i)
     {
-      if(!frame_table[i].spte->is_stack)
+      if(!frame_table[i].spte->is_stack && !frame_table[i].in_edit)
         {
           return frame_swap(&frame_table[i]);
         }

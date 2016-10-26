@@ -12,6 +12,7 @@ struct frame_table_entry {
 	tid_t owner_tid;
 	struct sup_pte *spte;
 	void *frame_addr;
+	bool in_edit;
 };
 
 void frame_table_init(void);
