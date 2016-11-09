@@ -182,7 +182,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  /* Unblock threads that have slept for long enough */
+  /* Unblock threads in wait_list that have slept for long enough */
   struct list_elem *e;
   for (e = list_begin (&wait_list); e != list_end (&wait_list);
        e = list_next (e))
@@ -193,7 +193,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
           struct list_elem *prev = list_prev (e);
           list_remove (e);
           thread_unblock (t);
-          e = prev;
+          e = prev; /* To be able to iterate through entire list even 
+                       though we just removed the current element */
         }
     }
 }
