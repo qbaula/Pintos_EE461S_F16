@@ -224,9 +224,10 @@ lock_acquire (struct lock *lock)
       struct thread *next_thread = lock->holder;
       while (next_thread->lock_waiting_on != NULL)
         {
-          thread_set_priority_other (next_thread, curr->priority);
           next_thread->lock_waiting_on->curr_priority = curr->priority;
+
           next_thread = next_thread->lock_waiting_on->holder;
+          thread_set_priority_other (next_thread, curr->priority);
         }
     }
 
