@@ -264,6 +264,29 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  struct thread *curr = thread_current ();
+  list_remove (&lock->elem);
+  if (list_empty(&curr->locks_owned))
+    {
+      thread_set_priority_other (curr, curr->orig_priority);
+    }
+  else
+    {
+      struct list_elem *e;
+      int max_lock_priority = PRI_MIN;
+      for (e = list_begin (&curr->locks_owned); e != list_end (&curr->locks_owned);
+           e = list_next (e))
+        {
+          struct lock *l = list_entry (e, struct lock, elem);
+          if (l->curr_priority > max_lock_priority)
+            {
+              max_lock_priority = l->curr_priority;
+            }
+        }
+
+      thread_set_priority_other (curr, max_lock_priority);
+    }
+
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
