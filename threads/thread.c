@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/thread.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -70,7 +71,6 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-bool greater_priority (struct list_elem *a, struct list_elem *b, void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -245,7 +245,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &greater_priority, NULL);
+  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &priority_descending, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -316,7 +316,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &greater_priority, NULL);
+    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &priority_descending, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -344,11 +344,20 @@ void
 thread_set_priority (int new_priority) 
 {
   struct thread *cur = thread_current();
-  struct list_elem *e = &cur->elem;
 
   cur->priority = new_priority;
-  // list_remove (e);
+  cur->orig_priority = new_priority;
   thread_yield ();
+}
+
+void
+thread_set_priority_other (struct thread *t, int new_priority)
+{
+  t->priority = new_priority;
+  if (t->status == THREAD_READY)
+    {
+      list_sort (&ready_list, (list_less_func *) priority_descending, NULL);
+    }
 }
 
 /* Returns the current thread's priority. */
@@ -477,6 +486,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  t->orig_priority = priority;
+  list_init (&t->locks_owned);
+  t->lock_waiting_on = NULL;
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -602,7 +615,7 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
  * the thread containing b.
  */
 bool
-greater_priority (struct list_elem *a, struct list_elem *b, void *aux UNUSED)
+priority_descending (struct list_elem *a, struct list_elem *b, void *aux UNUSED)
 {
   struct thread *thread_a = list_entry (a, struct thread, elem);
   struct thread *thread_b = list_entry (b, struct thread, elem);

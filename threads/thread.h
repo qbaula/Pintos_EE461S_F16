@@ -88,23 +88,26 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Current priority. */
-    // int orig_priority;                  /* Priority thread was initialized with */
-    struct list_elem allelem;           /* List element for all threads list. */
 
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element for ready list. */
-
-    /* Used for timer_sleep() */
-    struct list_elem wait_elem;         /* List element for wait list. */
     int64_t sleep_end;
 
+    int orig_priority;                  /* Priority thread was initialized with */
+    struct list locks_owned;
+    struct lock *lock_waiting_on;
+
+    struct list_elem allelem;           /* List element for all threads list. */
+    struct list_elem elem;              /* List element for ready list. 
+                                         * Shared between thread.c and synch.c. */
+    struct list_elem wait_elem;         /* List element for wait list. 
+                                         * Used for timer_sleep() */
+
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+    uint32_t *pagedir;                  /* Page directory. 
+                                         * Owned by userprog/process.c. */
 #endif
 
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
+    unsigned magic;                     /* Detects stack overflow. 
+                                         * Owned by thread.c. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -137,6 +140,8 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+void thread_set_priority_other (struct thread *t, int new_priority);
+bool priority_descending (struct list_elem *a, struct list_elem *b, void *aux UNUSED);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

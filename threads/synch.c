@@ -26,10 +26,10 @@
    MODIFICATIONS.
 */
 
-#include "threads/synch.h"
 #include <stdio.h>
 #include <string.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -68,7 +68,8 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem,
+                           (list_less_func *) &priority_descending, NULL);
       thread_block ();
     }
   sema->value--;
@@ -109,14 +110,21 @@ void
 sema_up (struct semaphore *sema) 
 {
   enum intr_level old_level;
+  struct thread *t = NULL;
 
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters))
+    {
+      t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+      thread_unblock (t);
+    }
   sema->value++;
+  if (t != NULL && thread_current()->priority < t->priority)
+    {
+      thread_yield ();
+    }
   intr_set_level (old_level);
 }
 
@@ -176,7 +184,7 @@ void
 lock_init (struct lock *lock)
 {
   ASSERT (lock != NULL);
-
+ 
   lock->holder = NULL;
   sema_init (&lock->semaphore, 1);
 }
@@ -196,8 +204,33 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  struct thread *curr = thread_current ();
+
+  if (lock->holder == NULL)
+    {
+      lock->curr_priority = curr->priority;
+    }
+  else
+    {
+      if (lock->curr_priority < curr->priority)
+        {
+          curr->lock_waiting_on = lock;
+          thread_set_priority_other (lock->holder, curr->priority);
+          lock->curr_priority = curr->priority;
+        }
+
+      struct thread *next_thread = lock->holder;
+      while (next_thread->lock_waiting_on != NULL)
+        {
+          thread_set_priority_other (next_thread, curr->priority);
+          next_thread->lock_waiting_on->curr_priority = curr->priority;
+          next_thread = next_thread->lock_waiting_on->holder;
+        }
+    }
+
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  list_push_back (&curr->locks_owned, &lock->elem);
+  lock->holder = curr;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
