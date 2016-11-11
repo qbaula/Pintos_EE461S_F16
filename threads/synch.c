@@ -308,6 +308,7 @@ lock_held_by_current_thread (const struct lock *lock)
 /* One semaphore in a list. */
 struct semaphore_elem 
   {
+    int priority;
     struct list_elem elem;              /* List element. */
     struct semaphore semaphore;         /* This semaphore. */
   };
@@ -353,11 +354,29 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
   
+  waiter.priority = thread_current()->priority;
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+  list_insert_ordered (&cond->waiters, &waiter.elem, 
+                       (list_less_func *) &cond_descending, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
+}
+
+bool 
+cond_descending (struct list_elem *a, struct list_elem *b, void *aux UNUSED)
+{
+  struct semaphore_elem *sema_a = list_entry (a, struct semaphore_elem, elem);
+  struct semaphore_elem *sema_b = list_entry (b, struct semaphore_elem, elem);
+
+  if (sema_a->priority > sema_b->priority)
+    {
+      return true;
+    }
+  else
+    {
+      return false;
+    }
 }
 
 /* If any threads are waiting on COND (protected by LOCK), then
