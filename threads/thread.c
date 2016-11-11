@@ -345,7 +345,10 @@ thread_set_priority (int new_priority)
 {
   struct thread *cur = thread_current();
 
-  cur->priority = new_priority;
+  if (cur->priority == cur->orig_priority)
+    {
+      cur->priority = new_priority;
+    }
   cur->orig_priority = new_priority;
   thread_yield ();
 }
