@@ -114,9 +114,11 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
+  // printf("Sema Up Priority: %d\n", thread_current ()->priority);
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters))
     {
+      list_sort(&sema->waiters, (list_less_func *) &priority_descending, NULL);
       t = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
       thread_unblock (t);
     }
