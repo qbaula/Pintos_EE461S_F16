@@ -113,6 +113,8 @@ struct thread
     struct list child_processes;        /* Keep track of all children. */
 
     struct file_list* open_files;               /* Process file list. */
+    
+    struct dir *cwd;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

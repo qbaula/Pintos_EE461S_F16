@@ -7,10 +7,12 @@
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/directory.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -98,6 +100,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  initial_thread->cwd = NULL;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -224,6 +227,16 @@ thread_create (const char *name, int priority,
       t->open_files->isOpen[i] = true;
       t->open_files->files[i] = NULL;
   }
+
+  /* Set current working directory */
+  if (parent->cwd)
+    {
+      t->cwd = dir_reopen(parent->cwd);
+    }
+  else
+    {
+      t->cwd = NULL;
+    }  
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -507,7 +520,7 @@ init_thread (struct thread *t, const char *name, int priority)
   
   strlcpy (t->name, name, sizeof t->name);
   // strtok_r ((t->name), ' ', &save_ptr);
-  int i;
+  uint32_t i;
   for (i = 0; i < sizeof (t->name); i++)
   {
     if (t->name[i] == ' ')

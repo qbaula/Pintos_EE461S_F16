@@ -1,7 +1,9 @@
 #include "filesys/file.h"
 #include <debug.h>
 #include "filesys/inode.h"
+#include "filesys/directory.h"
 #include "threads/malloc.h"
+
 
 /* An open file. */
 struct file 
@@ -9,6 +11,7 @@ struct file
     struct inode *inode;        /* File's inode. */
     off_t pos;                  /* Current position. */
     bool deny_write;            /* Has file_deny_write() been called? */
+    struct dir *dir;
   };
 
 /* Opens a file for the given INODE, of which it takes ownership,
@@ -23,6 +26,14 @@ file_open (struct inode *inode)
       file->inode = inode;
       file->pos = 0;
       file->deny_write = false;
+      if(inode_is_dir(file->inode))
+        {
+          file->dir = dir_open(file->inode);
+        }
+      else 
+        {
+          file->dir = NULL;
+        }
       return file;
     }
   else
@@ -94,6 +105,10 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size) 
 {
+  if (inode_is_dir(file->inode))
+    {
+      return -1;
+    }
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
   return bytes_written;
@@ -165,4 +180,10 @@ file_tell (struct file *file)
 {
   ASSERT (file != NULL);
   return file->pos;
+}
+
+struct dir *
+file_get_dir(struct file *file)
+{
+  return file->dir;
 }

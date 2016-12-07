@@ -124,10 +124,18 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  if (lookup (dir, name, &e, NULL))
-    *inode = inode_open (e.inode_sector);
+  if (strcmp(name, ".") == 0)
+    {
+      *inode = inode_reopen (dir->inode);
+    }
+  else  if (lookup (dir, name, &e, NULL))
+    {
+      *inode = inode_open (e.inode_sector);
+    }
   else
-    *inode = NULL;
+    {
+      *inode = NULL;
+    }
 
   return *inode != NULL;
 }
@@ -201,6 +209,14 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  /* Directory to be deleted is used by other processes */
+  if (inode_is_dir(inode) && inode_get_open_cnt(inode) > 1)
+    goto done;
+
+  /* Directory to be deleted is nonempty */
+  if (inode_is_dir(inode) && !dir_is_empty(inode))
+    goto done;
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
@@ -233,4 +249,47 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         } 
     }
   return false;
+}
+
+bool
+dir_is_empty (struct inode *inode)
+{
+  struct dir *dir;
+  struct dir_entry e;
+  size_t ofs;
+  
+  dir = dir_open(inode);
+  ASSERT (dir != NULL);
+
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e) 
+    {
+      if (e.in_use) 
+        {
+          dir_close(dir);
+          return false;
+        }
+    }
+  dir_close(dir);
+  return true;
+}
+bool
+dir_lookup_inode (struct dir *dir, const char *name, struct inode **inode)
+{
+  if(strcmp(name, "..") == 0)
+    {
+      *inode = inode_get_parent( dir->inode );
+      if(*inode == NULL)
+        {
+          return false;
+        }
+    }
+  else
+    {
+      if(!dir_lookup(dir, name, inode)) 
+        {
+          return false;
+        }
+    }
+  return true;
 }

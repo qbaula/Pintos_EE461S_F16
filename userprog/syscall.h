@@ -147,5 +147,15 @@ unsigned tell (int fd);
  */
 void close (int fd);
 
-#endif /* userprog/syscall.h */
+/*
+ */
+bool chdir (const char*);
 
+bool mkdir (const char*);
+
+bool readdir (int fd, char *name);
+
+bool isdir (int fd);
+
+int inumber (int fd);
+#endif /* userprog/syscall.h */

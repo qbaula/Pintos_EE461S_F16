@@ -229,6 +229,24 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
+bool
+inode_is_dir (const struct inode *inode)
+{
+  return inode->data.is_dir;
+}
+
+struct inode *
+inode_get_parent (struct inode *inode)
+{
+  return inode_open(inode->data.parent);
+}
+
+int
+inode_get_open_cnt (struct inode *inode)
+{
+  return inode->open_cnt;
+}
+
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
@@ -442,6 +460,7 @@ inode_length (const struct inode *inode)
 {
   return inode->data.length;
 }
+
 
 bool inode_alloc (struct inode_disk *disk_inode)
 {

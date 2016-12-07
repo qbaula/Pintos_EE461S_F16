@@ -16,6 +16,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
+#define INIT_DIR_SIZE 512
 
 static void syscall_handler (struct intr_frame *);
 int get_arg (void *esp, uint32_t *args, int num_args);
@@ -29,6 +30,7 @@ bool is_open(struct thread* t, int fd);
 /* File system concurrency lock. */
 bool firstCall = true;
 static struct lock file_lock;
+
 
 /* Checks if a threads's given file descriptor is valid/open.
  * Assumes that this is for files and not STDIN/STDOUT. */
@@ -269,10 +271,8 @@ syscall_handler (struct intr_frame *f UNUSED)
                 /* Args good. */
                 const char* v_file = (const char*) args[0];
                 /* Validate pointer. */
-                if (ptr_valid(v_file, 0)){
-                    /*Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file); // check if p_file is valid
-                    f->eax = remove(p_file);
+                if (ptr_valid(v_file, strlen(v_file))){
+                    f->eax = remove(v_file);
                 }
                 else {
                     /* Page unmapped. */
@@ -298,13 +298,8 @@ syscall_handler (struct intr_frame *f UNUSED)
                     exit (-1);
                   }
                 /* Validiate pointer. */
-                if (ptr_valid(v_file, 0)){
-                    /* Convert to paddr. */
-                    const char* p_file = (const char*) get_paddr(v_file);
-                    if (p_file)
-                      {
-                        f->eax = open(p_file);
-                      }
+                if (ptr_valid(v_file, strlen(v_file))){
+                    f->eax = open(v_file);
                 }
                 else {
                     /* Page unmapped. */
@@ -448,7 +443,77 @@ syscall_handler (struct intr_frame *f UNUSED)
             }
           break;
         }
+     
+      case SYS_CHDIR:
+        {
+          if(get_arg(f->esp, args, 1) > 0)
+            {
+              const char *name = (const char *) args[0];
+              f->eax = chdir(name);
+            } 
+          else 
+            {
+              f->eax = -1;
+            }
+          break;
+        }
+
+      case SYS_MKDIR:
+        {
+          if(get_arg(f->esp, args, 1) > 0)
+            {
+              const char *name = (const char *) args[0];
+              f->eax = mkdir(name);
+            } 
+          else 
+            {
+              f->eax = -1;
+            }
+          break;
+        }
+
+      case SYS_READDIR:
+        {
+          if(get_arg(f->esp, args, 2) > 0)
+            {
+              int fd = (int) args[0];
+              const char *name = (const char *) args[1];
+              f->eax = readdir(fd, name);
+            } 
+          else 
+            {
+              f->eax = -1;
+            }
+          break;
+        }
+
+      case SYS_ISDIR:
+        {
+          if(get_arg(f->esp, args, 1) > 0)
+            {
+              int fd = (int) args[0];
+              f->eax = isdir(fd);
+            }
+          else
+            {
+              f->eax = -1;
+            }
+          break;
+        }
       
+      case SYS_INUMBER:                 /* Returns INUMBER of FD */
+        {
+          if(get_arg(f->esp, args, 1) > 0)
+            {
+              int fd = (int) args[0];
+              f->eax = inumber(fd);
+            }
+          else
+            {
+              f->eax = -1;
+            }
+          break;
+        }
       default:
         {
 //            printf("sys_default\n");
@@ -568,7 +633,7 @@ create (const char *file, unsigned initial_size)
      * Creating a new file does not open it: opening the new file is a separate operation which would require a open system call. 
      */
     lock_acquire(&file_lock);
-    bool success = filesys_create(file, initial_size);
+    bool success = filesys_create(file, initial_size, false);
     lock_release(&file_lock);
     return success;
 }
@@ -826,5 +891,69 @@ close (int fd)
         lock_release(&file_lock);
         t->open_files->files[fd] = NULL;
         t->open_files->isOpen[fd] = false; 
+    }
+}
+
+bool 
+chdir (const char *dir)
+{
+  return filesys_chdir (dir);
+}
+
+bool 
+mkdir (const char *dir)
+{
+  return filesys_create(dir, INIT_DIR_SIZE, true);
+}
+
+bool 
+readdir (int fd, char *name)
+{
+  struct thread *t = thread_current();
+  if (is_open(t, fd))
+    {
+      struct file *file = t->open_files->files[fd];
+      struct inode *file_inode = file_get_inode(file);
+      if (inode_is_dir(file_inode) && dir_readdir(file_get_dir(file), 
+              (const char *) name))
+        {
+          return true;
+        }
+    }
+
+  return false;
+}
+
+bool 
+isdir (int fd)
+{
+  struct thread *t = thread_current();
+
+  if (is_open(t,fd))
+    {
+
+      struct inode *file_inode = file_get_inode(t->open_files->files[fd]);
+      return inode_is_dir(file_inode);
+    }
+  else 
+    {
+      return -1;
+    }
+
+}
+
+int 
+inumber (int fd)
+{
+  struct thread *t = thread_current();
+
+  if (is_open(t,fd))
+    {
+      struct inode *file_inode = file_get_inode(t->open_files->files[fd]);
+      return inode_get_inumber(file_inode);
+    }
+  else 
+    {
+      return -1;
     }
 }

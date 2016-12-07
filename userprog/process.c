@@ -112,6 +112,10 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
+  if (!thread_current()->cwd)
+    {
+      thread_current()->cwd = dir_open_root();
+    } 
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
