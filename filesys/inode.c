@@ -117,7 +117,9 @@ byte_to_sector (const struct inode *inode, off_t pos)
         }
     }
   else
-    return -1;
+    {
+      return -1;
+    }
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -333,6 +335,23 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+
+  // if (byte_to_sector(inode, offset + size) == -1)
+  if (offset + size > inode->data.length)
+    {
+      lock_acquire(&inode->inode_lock);
+
+      if (offset + size > inode->data.length)
+      {
+        if (!inode_extend (&inode->data, offset + size)) 
+          {
+            return 0;
+          }
+        inode->data.length = offset + size;
+      }
+
+      lock_release(&inode->inode_lock);
+    }
 
   while (size > 0) 
     {
