@@ -3,6 +3,7 @@
 #include <debug.h>
 #include <round.h>
 #include <string.h>
+#include <stdio.h>
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
@@ -61,6 +62,9 @@ bool inode_extend_doubly_indirect (data_sector *sector, size_t num_sectors);
 bool allocate_sector (data_sector *sector);
 void deallocate_sector (data_sector sector);
 
+void print_single_indirect (block_sector_t sector);
+void print_doubly_indirect (block_sector_t sector);
+
 inline size_t
 min (size_t a, size_t b)
 {
@@ -103,7 +107,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
         {
           struct indirect_block doubly_indirect_block, indirect_block;
           uint32_t doubly_block_idx, singly_block_idx;
-          block_idx -= (MAX_DIRECT_BLOCKS + BLOCKS_PER_INDIRECT);
+          block_idx = block_idx - (MAX_DIRECT_BLOCKS + BLOCKS_PER_INDIRECT);
           doubly_block_idx = block_idx / BLOCKS_PER_INDIRECT;
           singly_block_idx = block_idx % BLOCKS_PER_INDIRECT;
 
@@ -337,11 +341,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     return 0;
 
   // if (byte_to_sector(inode, offset + size) == -1)
-  if (offset + size > inode->data.length)
+  if (offset + size >= inode->data.length)
     {
       lock_acquire(&inode->inode_lock);
 
-      if (offset + size > inode->data.length)
+      if (offset + size >= inode->data.length)
       {
         if (!inode_extend (&inode->data, offset + size)) 
           {
@@ -357,6 +361,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     {
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+      if (sector_idx == 0)
+        {
+          printf("offset: %d\n", offset);
+          printf("offset+size: %d\n", offset + size);
+          printf("inode length: %d\n", inode->data.length);
+          print_doubly_indirect (inode->data.doubly_indirect_block);
+        }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -482,7 +493,7 @@ bool inode_extend (struct inode_disk *disk_inode, off_t length)
 
   /* Doubly Indirect Block */
   alloc_sectors = min(num_sectors, BLOCKS_PER_INDIRECT * BLOCKS_PER_INDIRECT);
-  if(!inode_extend_doubly_indirect(&disk_inode->indirect_block, alloc_sectors))
+  if(!inode_extend_doubly_indirect(&disk_inode->doubly_indirect_block, alloc_sectors))
     {
       return false; 
     }
@@ -609,4 +620,41 @@ inode_dealloc_doubly_indirect(data_sector sector)
       inode_dealloc_indirect(doubly_indirect_block.ptr[i]);
     }
   deallocate_sector(sector);
+}
+
+void
+print_single_indirect (block_sector_t sector)
+{
+  struct indirect_block block;
+  printf("Indirect sector: %d\n", sector);
+  if (sector)
+    {
+      block_read(fs_device, sector, &block);
+      int i;
+      for (i = 0; i < BLOCKS_PER_INDIRECT; i++) 
+        {
+          printf ("%8d", block.ptr[i]);
+          if (i % 8 == 0)
+            {
+              printf("\n");
+            }
+        }
+    }
+}
+
+void
+print_doubly_indirect (block_sector_t sector)
+{
+  struct indirect_block block;
+  printf("Doubly indirect sector: %d\n", sector);
+  if (sector)
+    {
+      block_read (fs_device, sector, &block);
+      int i;
+      for (i = 0; i < BLOCKS_PER_INDIRECT; i++)
+        {
+          print_single_indirect (block.ptr[i]);
+          printf("\n");
+        }
+    }
 }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <stdbool.h>
+#include <string.h>
 #include "devices/shutdown.h"
 #include "userprog/syscall.h"
 #include "userprog/process.h"
@@ -239,12 +240,12 @@ syscall_handler (struct intr_frame *f UNUSED)
                   }
                 unsigned size = (unsigned) args[1];
                 /* Validate pointer. */
-                if (ptr_valid(v_file, size)){
+                if (ptr_valid(v_file, strlen(v_file))){
                     /* Convert to phys addr. */
-                    const char* p_file = (const char*) get_paddr(v_file);   
-                    if (p_file)
+                    // const char* p_file = (const char*) get_paddr(v_file);   
+                    if (v_file)
                       {
-                        f->eax = create(p_file, size);                 
+                        f->eax = create(v_file, size);                 
                       }
                 }
                 else {
@@ -661,8 +662,8 @@ open (const char *file)
       lock_acquire(&file_lock);
 	  //printf("File name wanted to open: %s; Thread name: %s\n", file, t->name);
       //if (strcmp(file, t->name) == 0)
-      if(is_ELF(f, file))  
-		{
+      if(is_ELF(f, (char *) file))  
+		    {
           file_deny_write(f);
         }
       lock_release(&file_lock);
