@@ -558,9 +558,9 @@ exit (int status)
     {
       if (curr->open_files->isOpen)
         {
-          lock_acquire(&file_lock);
+          // lock_acquire(&file_lock);
           file_close (curr->open_files->files[i]);
-          lock_release(&file_lock);
+          // lock_release(&file_lock);
         }
     }
   free (curr->open_files->files);
@@ -632,9 +632,9 @@ create (const char *file, unsigned initial_size)
      *
      * Creating a new file does not open it: opening the new file is a separate operation which would require a open system call. 
      */
-    lock_acquire(&file_lock);
+    // lock_acquire(&file_lock);
     bool success = filesys_create(file, initial_size, false);
-    lock_release(&file_lock);
+    // lock_release(&file_lock);
     return success;
 }
 
@@ -648,10 +648,10 @@ remove (const char *file)
      * A file may be removed regardless of whether it is open or closed, and removing an open file does not close it.
      * See Removing an Open File, for details. 
      */
-    lock_acquire(&file_lock);
+    // lock_acquire(&file_lock);
     /* Implementation not complete. */
     bool success = filesys_remove(file);
-    lock_release(&file_lock);
+    // lock_release(&file_lock);
     return success;
 }
 
@@ -675,9 +675,9 @@ open (const char *file)
    */
   int fd; /* Return value. */
   
-  lock_acquire(&file_lock);
+  // lock_acquire(&file_lock);
   struct file* f = filesys_open(file);
-  lock_release(&file_lock);
+  // lock_release(&file_lock);
   // printf("open\n");
 
   if (f == NULL)
@@ -724,14 +724,14 @@ open (const char *file)
       t->open_files->isOpen[fd] = true;
       
       /* Determine if this is an ELF file. If so, deny write access. */
-      lock_acquire(&file_lock);
+      // lock_acquire(&file_lock);
 	  //printf("File name wanted to open: %s; Thread name: %s\n", file, t->name);
       //if (strcmp(file, t->name) == 0)
       if(is_ELF(f, (char *) file))  
 		    {
           file_deny_write(f);
         }
-      lock_release(&file_lock);
+      // lock_release(&file_lock);
     }
   
   return fd;
@@ -749,9 +749,9 @@ filesize (int fd)
     /* Check for valid fd. */
     if (!is_open(t , fd)){size = -1;}
     else {
-        lock_acquire(&file_lock);
+        // lock_acquire(&file_lock);
         size = file_length(fd_to_file(t, fd));
-        lock_release(&file_lock);
+        // lock_release(&file_lock);
     }
    return size;
 }
@@ -787,9 +787,9 @@ read (int fd, void *buffer, unsigned size)
         struct file* f = fd_to_file(thread_current(), fd);
         if (f == NULL){bytes_read = -1;}
         else {
-            lock_acquire(&file_lock);
+            // lock_acquire(&file_lock);
             bytes_read = (int) file_read(f, buffer, size);
-            lock_release(&file_lock);
+            // lock_release(&file_lock);
         }
     }
     return bytes_read;
@@ -826,9 +826,9 @@ write (int fd, const void *buffer, unsigned size)
         struct file* f = fd_to_file(thread_current(), fd);
         if (f == NULL){bytes_written = -1;}
         else {
-            lock_acquire(&file_lock);
+            // lock_acquire(&file_lock);
             bytes_written = (int) file_write(f, buffer, size);
-            lock_release(&file_lock);
+            // lock_release(&file_lock);
         }
     }
 	// printf("Returning Bytes: %d\n", bytes_written);
@@ -850,9 +850,9 @@ seek (int fd, unsigned position)
      */
     struct thread* t = thread_current();
     if (is_open(t, fd)){
-        lock_acquire(&file_lock);
+        // lock_acquire(&file_lock);
         file_seek(fd_to_file(t, fd), position);
-        lock_release(&file_lock);  
+        // lock_release(&file_lock);  
 
     }
 }
@@ -868,9 +868,9 @@ tell (int fd)
     struct thread* t = thread_current();
     if (!is_open(t, fd)){pos = -1;}
     else {
-        lock_acquire(&file_lock);
+        // lock_acquire(&file_lock);
         pos = file_tell(fd_to_file(t, fd));
-        lock_release(&file_lock); 
+        // lock_release(&file_lock); 
     }
     return pos; 
 }
@@ -886,9 +886,9 @@ close (int fd)
     /* Check fd validity. */
     if (is_open(t, fd)){
         /* File is open. */
-        lock_acquire(&file_lock);
+        // lock_acquire(&file_lock);
         file_close(fd_to_file(t, fd));
-        lock_release(&file_lock);
+        // lock_release(&file_lock);
         t->open_files->files[fd] = NULL;
         t->open_files->isOpen[fd] = false; 
     }

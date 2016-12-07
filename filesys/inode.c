@@ -301,6 +301,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     {
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+      if(sector_idx == 0)
+        { 
+          printf("Hi\n");
+        }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -452,6 +456,19 @@ inode_allow_write (struct inode *inode)
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
+}
+
+bool 
+inode_add_parent (block_sector_t parent, block_sector_t child)
+{
+  struct inode* inode = inode_open(child);
+  if (!inode)
+    {
+      return false;
+    }
+  inode->data.parent = parent;
+  inode_close(inode);
+  return true;
 }
 
 /* Returns the length, in bytes, of INODE's data. */

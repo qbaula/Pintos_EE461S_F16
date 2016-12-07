@@ -164,6 +164,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   if (lookup (dir, name, NULL, NULL))
     goto done;
 
+  if (!inode_add_parent(inode_get_inumber(dir_get_inode(dir)),
+      inode_sector))
+    goto done;
+
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
@@ -203,25 +207,20 @@ dir_remove (struct dir *dir, const char *name)
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
     goto done;
-
   /* Open inode. */
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
-
   /* Directory to be deleted is used by other processes */
   if (inode_is_dir(inode) && inode_get_open_cnt(inode) > 1)
     goto done;
-
   /* Directory to be deleted is nonempty */
   if (inode_is_dir(inode) && !dir_is_empty(inode))
     goto done;
-
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
-
   /* Remove inode. */
   inode_remove (inode);
   success = true;
