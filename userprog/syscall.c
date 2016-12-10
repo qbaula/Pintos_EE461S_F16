@@ -13,6 +13,8 @@
 #include "userprog/pagedir.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
@@ -477,7 +479,7 @@ syscall_handler (struct intr_frame *f UNUSED)
           if(get_arg(f->esp, args, 2) > 0)
             {
               int fd = (int) args[0];
-              const char *name = (const char *) args[1];
+              char *name = (char *) args[1];
               f->eax = readdir(fd, name);
             } 
           else 
@@ -914,8 +916,7 @@ readdir (int fd, char *name)
     {
       struct file *file = t->open_files->files[fd];
       struct inode *file_inode = file_get_inode(file);
-      if (inode_is_dir(file_inode) && dir_readdir(file_get_dir(file), 
-              (const char *) name))
+      if (inode_is_dir(file_inode) && dir_readdir(file_get_dir(file), (char *) name))
         {
           return true;
         }
