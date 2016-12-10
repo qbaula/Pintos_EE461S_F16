@@ -19,6 +19,7 @@
 typedef block_sector_t inode_sector;
 typedef block_sector_t data_sector;
 
+uint32_t ZEROS[BLOCK_SECTOR_SIZE/4];
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
@@ -134,6 +135,11 @@ static struct list open_inodes;
 void
 inode_init (void) 
 {
+  int i;
+  for (i = 0; i < BLOCK_SECTOR_SIZE/4; i++)
+    {
+      ZEROS[i] = 0;
+    }
   list_init (&open_inodes);
 }
 
@@ -373,7 +379,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           {
             return 0;
           }
-        inode->data.length = offset + size;
       }
 
       lock_release(&inode->inode_lock);
@@ -496,21 +501,20 @@ bool inode_extend (struct inode_disk *disk_inode, off_t length)
   /* Direct Blocks */
   uint32_t i;
   size_t alloc_sectors;
+
   alloc_sectors = min(num_sectors, MAX_DIRECT_BLOCKS);
   for (i = 0; i < alloc_sectors; i++) 
     {
       if (disk_inode->direct_blocks[i] == 0) 
         {
-          if(!free_map_allocate(1, &disk_inode->direct_blocks[i]))
-            {
-              return false;
-            }
+          allocate_sector (&(disk_inode->direct_blocks[i]));
         } 
     }
 
   num_sectors -= alloc_sectors;
   if(num_sectors == 0) 
     {
+      disk_inode->length = length;
       return true;
     }
 
@@ -524,6 +528,7 @@ bool inode_extend (struct inode_disk *disk_inode, off_t length)
   num_sectors -= alloc_sectors;
   if(num_sectors == 0) 
     {
+      disk_inode->length = length;
       return true;
     }
 
@@ -534,6 +539,7 @@ bool inode_extend (struct inode_disk *disk_inode, off_t length)
       return false; 
     }
   
+  disk_inode->length = length;
   return true; 
 }
 
@@ -545,6 +551,7 @@ bool allocate_sector (data_sector *sector)
         {
           return false;
         }
+      block_write(fs_device, *sector, &ZEROS);
     }
   return true;
 }
